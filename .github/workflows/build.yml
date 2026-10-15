@@ -62,8 +62,28 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Windows installer and ZIP
-        run: pnpm build:win
+      - name: Build Windows source
+        env:
+          ZTOOLS_TARGET_PLATFORM: win32
+        run: pnpm build
+
+      - name: Package Windows installer and ZIP
+        shell: pwsh
+        run: |
+          # pnpm 11 emits separate JSON trees for our separate-lockfile workspace;
+          # electron-builder 26 expects one application tree. Source compilation
+          # has finished, so temporarily hide only the workspace manifest.
+          $manifestBackup = Join-Path $env:RUNNER_TEMP 'cai-tools-pnpm-workspace.yaml'
+          Move-Item -LiteralPath pnpm-workspace.yaml -Destination $manifestBackup
+          try {
+            pnpm exec electron-builder --win --publish never
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Windows packaging failed.'
+            }
+          } finally {
+            # Restore the checkout even when packaging fails.
+            Move-Item -LiteralPath $manifestBackup -Destination pnpm-workspace.yaml
+          }
 
       - name: Verify packages and create checksums
         id: metadata
