@@ -1,7 +1,8 @@
-import { app, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import { createHash } from 'crypto'
 import { execSync } from 'child_process'
 import { hostname } from 'os'
+import { UPSTREAM_BASE_VERSION } from '../../../shared/localEdition'
 
 /**
  * 设备与应用信息 API - 插件专用
@@ -21,6 +22,10 @@ export class PluginDeviceAPI {
     return this.getDeviceId()
   }
 
+  /**
+   * 注册插件设备信息与上游 API 兼容版本的同步查询。
+   * @returns 无返回值。
+   */
   private setupIPC(): void {
     // 获取设备 ID（同步方法，供插件使用）
     ipcMain.on('get-native-id', (event) => {
@@ -33,11 +38,15 @@ export class PluginDeviceAPI {
       }
     })
 
-    // 获取应用版本（同步方法，供插件使用）
+    // 插件比较上游 API 版本；本地构建后缀仅由内部版本接口展示。
+    /**
+     * 将声明的上游兼容基线返回给第三方插件。
+     * @param event 同步 IPC 事件，通过 returnValue 返回版本。
+     * @returns 无返回值。
+     */
     ipcMain.on('get-app-version', (event) => {
       try {
-        const version = app.getVersion()
-        event.returnValue = version
+        event.returnValue = UPSTREAM_BASE_VERSION
       } catch (error) {
         console.error('[PluginDevice] get-app-version error:', error)
         event.returnValue = null

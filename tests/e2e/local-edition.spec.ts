@@ -2,6 +2,7 @@ import { expect, test, _electron as electron, type ElectronApplication } from '@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { UPSTREAM_BASE_VERSION } from '../../src/shared/localEdition'
 
 const projectRoot = path.resolve(__dirname, '../..')
 
@@ -97,6 +98,12 @@ test('本地版首次免登录、旧入口收敛、插件存储与主题快捷�
     const settings = (script: string): Promise<any> =>
       inPlugin(application!, '127.0.0.1:15177', script)
     await expect.poll(() => settings('document.body.innerText')).toContain('开机自动启动')
+    // 内部界面保留构建标识，第三方插件则按声明的上游 API 基线检查兼容性。
+    const buildVersion = JSON.parse(
+      await fs.readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ).version
+    expect(await application.evaluate(({ app }) => app.getVersion())).toBe(buildVersion)
+    expect(await settings('window.ztools.internal.getAppVersion()')).toBe(buildVersion)
     expect(await settings('window.ztools.internal.accountGetSession()')).toBeNull()
     const menus = await settings(
       '[...document.querySelectorAll(".menu-item")].map(item => item.textContent)'
@@ -164,6 +171,9 @@ test('本地版首次免登录、旧入口收敛、插件存储与主题快捷�
     await expect
       .poll(() => inPlugin(application!, 'local-api-e2e', 'document.body.innerText'))
       .toContain('Local API E2E Ready')
+    expect(await inPlugin(application, 'local-api-e2e', 'window.ztools.getAppVersion()')).toBe(
+      UPSTREAM_BASE_VERSION
+    )
     const results = await inPlugin(
       application,
       'local-api-e2e',
