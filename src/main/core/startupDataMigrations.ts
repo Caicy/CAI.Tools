@@ -73,12 +73,16 @@ function migrateLegacyMacAppIcons(items: any[]): boolean {
 }
 
 /**
- * 启动时统一迁移历史文件 URL、存储键和失效的功能引用。
+ * 启动时迁移配置和历史功能引用，AI 凭据迁移失败不阻断本机使用。
  * @returns 无返回值
  */
 export function runStartupDataMigrations(): void {
-  // 先升级 AI 配置，保证后续设置页和插件调用只读取统一的供应商结构。
-  aiProviderService.migrateLegacyData()
+  // 凭据拆分失败时保留旧配置并等待重试，其余本机 API 仍需完成初始化。
+  try {
+    aiProviderService.migrateLegacyData()
+  } catch {
+    console.warn('[AIProviders] AI_PROVIDER_MIGRATION_PENDING')
+  }
   migrateLegacyFileUrls()
   migrateHostStorageKeys()
   migrateDevPluginNames()

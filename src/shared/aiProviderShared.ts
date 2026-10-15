@@ -134,6 +134,15 @@ export interface AiProviderStore {
   providers: AiProvider[]
 }
 
+/** 持久化元数据不包含 API 密钥；完整凭据只在运行时组装。 */
+export type StoredAiProvider = Omit<AiProvider, 'apiKey'>
+
+/** 账户库内的无密钥供应商元数据，保持既有文档版本。 */
+export interface StoredAiProviderStore {
+  version: typeof AI_PROVIDER_STORE_VERSION
+  providers: StoredAiProvider[]
+}
+
 /** 新建或编辑供应商时提交的模型。 */
 export interface AiProviderModelInput {
   modelId: string

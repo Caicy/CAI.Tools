@@ -12,7 +12,7 @@
 
 开始日期：2026-10-14；整理完成：2026-10-15。依赖：[计划 A](./2026-10-14-cai-tools-local-edition-plan.md)。需求及协议：[具体设计](./2026-10-14-cai-tools-git-local-design.md)。下面的新类型与纯函数是实现合同/起始代码，不是已经部署的功能。
 
-当前进度（2026-10-15）：B 阶段已授权启动，B1 基础模块已实施并验证；B2–B9 尚未实施。实际结果与限制见[阶段证据](./evidence/git-mirror-acceptance.md)。不提交、推送、发布或部署。
+当前进度（2026-10-15）：B 阶段已授权启动，B1、B2 已实施并完成本机验证；B3–B9 尚未实施。实际结果与限制见[阶段证据](./evidence/git-mirror-acceptance.md)。用户要求的 A+B1 检查点已本地提交为 bdf563c；B2 保留未提交改动，未推送、发布或部署。
 
 ## 文件责任与依赖顺序
 
@@ -201,7 +201,7 @@ blobs/** -text
 
 **Files:** Create adapters/types、registry、codeSnippets、aiHelper、hostProjection；Modify aiProviderService 的本机密钥存储、shared/storageKeys、shared/aiProviderShared；Test `tests/main/gitMirrorAdapters.test.ts`。
 
-- [ ] 完整适配器端口如下；所有实现只处理明确匹配的文档，export/import 保留同步插件调用的行为：
+- [x] 完整适配器端口如下；所有实现只处理明确匹配的文档，export/import 保留同步插件调用的行为：
 
 ```ts
 import type { Json } from '../../../../shared/gitMirrorTypes'
@@ -218,8 +218,8 @@ export interface AdapterLookup {
 }
 ```
 
-- [ ] code-snippets 只接受 `tpl_` 文档。字段 schema：\_id/name/description/language/tags/code/usageCount/pinned/createdAt/updatedAt，外加宿主已声明 revision 元信息。未知业务字段使该插件数据状态变为 unsupported，绝不默认扩展。
-- [ ] 投影白名单为 name、description、language、tags、code、pinned、createdAt；验证字符串、字符串数组、布尔和日期格式。导入拼接本机 namespace，合并本机 usageCount 与 updatedAt，已有统计不被远端 0 覆盖。完整字段投影核心为：
+- [x] code-snippets 只接受 `tpl_` 文档。字段 schema：\_id/name/description/language/tags/code/usageCount/pinned/createdAt/updatedAt，外加宿主已声明 revision 元信息。未知业务字段使该插件数据状态变为 unsupported，绝不默认扩展。
+- [x] 投影白名单为 name、description、language、tags、code、pinned、createdAt；验证字符串、字符串数组、布尔和日期格式。导入拼接本机 namespace，合并本机 usageCount 与 updatedAt，已有统计不被远端 0 覆盖。完整字段投影核心为：
 
 ```ts
 /**
@@ -249,13 +249,13 @@ export function projectTemplate(doc: {
 }
 ```
 
-- [ ] ai-helper 只接受 `conv/<id>` 与已声明的 `selected_model`。使用 strictParseJson 读取会话 data；Conversation 字段 id/title/messages/createdAt/updatedAt，Message 字段 id/role/content/images/reasoning/timestamp，拒绝其余字段。导入时将会话重新序列化为 data，selected_model 恢复为 value 字段，保持原插件读法。
-- [ ] 宿主 settings-general 使用设计文档的字段白名单；导入将这些键覆盖到本机原配置，所有非白名单字段保持原值。快捷键只选择目标 pluginName 在已安装描述符中的 canonical pluginName/command；应用路径目标留本机。
-- [ ] AI provider 根据稳定 provider ID 拆出本机 apiKey；运行时 getStore 继续返回组装后的原契约，导出始终使用无凭据 projection。URL 含 username/password/query 时该地址留本机，避免其中的鉴权参数被导出。新设备无密钥时模型显示待配置并拒绝调用。导入不能把空密钥抹掉本机密钥。
-- [ ] 新增内部 `StoredAiProvider = Omit<AiProvider, 'apiKey'>` 元数据类型，完整 AiProviderStore 只在运行 API 读取时组装。凭据设备文档为 `ZTOOLS/local-ai-provider-credentials`，由现有 ZTOOLS 默认 device 路由承接。由计划 A 升到 B 时，先持久化并读回本机凭据，再去掉旧 ai-models 中的密钥；迁移中断重试幂等，投影从第一步起始终排除凭据。不要对无 apiKey 的元数据误用旧完整 store validator 导致提供商丢失。
-- [ ] 适配登记仅精确版本：code-snippets 1.2.0、ai-helper 1.2.1。插件更新到未知版本保持旧同步文件和本机数据，UI 显示该版本数据未适配。
-- [ ] 测试：未知插件/字段/版本不导出；模板复制次数改变不改投影；AI data 包含坏 JSON 拒绝；用 `apiKey='LOCAL_ONLY_SECRET'` 断言所有共享文件都不含该配置值；正文若主动包含同字符串必须按正文处理，不把它当凭据识别通过的证据。
-- [ ] `pnpm exec vitest run tests/main/gitMirrorAdapters.test.ts`，通过后审查并提交。
+- [x] ai-helper 只接受 `conv/<id>` 与已声明的 `selected_model`。使用 strictParseJson 读取会话 data；Conversation 字段 id/title/messages/createdAt/updatedAt，Message 字段 id/role/content/images/reasoning/timestamp，拒绝其余字段。导入时将会话重新序列化为 data，selected_model 恢复为 value 字段，保持原插件读法。
+- [x] 宿主 settings-general 使用设计文档的字段白名单；导入将这些键覆盖到本机原配置，所有非白名单字段保持原值。快捷键只选择目标 pluginName 在已安装描述符中的 canonical pluginName/command；应用路径目标留本机。
+- [x] AI provider 根据稳定 provider ID 拆出本机 apiKey；运行时 getStore 继续返回组装后的原契约，导出始终使用无凭据 projection。URL 含 username/password/query 时该地址留本机，避免其中的鉴权参数被导出。新设备无密钥时模型显示待配置并拒绝调用。导入不能把空密钥抹掉本机密钥。
+- [x] 新增内部 `StoredAiProvider = Omit<AiProvider, 'apiKey'>` 元数据类型，完整 AiProviderStore 只在运行 API 读取时组装。凭据设备文档为 `ZTOOLS/local-ai-provider-credentials`，由现有 ZTOOLS 默认 device 路由承接。由计划 A 升到 B 时，先持久化并读回本机凭据，再去掉旧 ai-models 中的密钥；迁移中断重试幂等，投影从第一步起始终排除凭据。不要对无 apiKey 的元数据误用旧完整 store validator 导致提供商丢失。
+- [x] 适配登记仅精确版本：code-snippets 1.2.0、ai-helper 1.2.1。插件更新到未知版本保持旧同步文件和本机数据，UI 显示该版本数据未适配。
+- [x] 测试：未知插件/字段/版本不导出；模板复制次数改变不改投影；AI data 包含坏 JSON 拒绝；用 `apiKey='LOCAL_ONLY_SECRET'` 断言所有共享文件都不含该配置值；正文若主动包含同字符串必须按正文处理，不把它当凭据识别通过的证据。
+- [x] `pnpm exec vitest run tests/main/gitMirrorAdapters.test.ts`，通过后审查并记录；B2 保留在检查点后的工作区。
 
 ## Task B3：受限只读 Git 与稳定快照读取
 

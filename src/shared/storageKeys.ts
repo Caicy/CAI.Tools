@@ -4,6 +4,7 @@ export const HOST_STORAGE_KEYS = {
   disabledPlugins: 'disabled-plugins',
   pluginOrder: 'plugin-order',
   aiModels: 'ai-models',
+  localAiProviderCredentials: 'local-ai-provider-credentials',
   pinnedCommands: 'pinned-commands',
   superPanelPinned: 'super-panel-pinned',
   localShortcuts: 'local-shortcuts',

@@ -26,10 +26,12 @@ vi.mock('../../src/main/core/internalPlugins.js', () => ({
 }))
 
 import {
+  runStartupDataMigrations,
   cleanupLegacyWebSearchReferences,
   migrateLegacyFileUrls,
   migrateHostStorageKeys
 } from '../../src/main/core/startupDataMigrations'
+import aiProviderService from '../../src/main/core/aiProviderService'
 
 describe('startupDataMigrations', () => {
   let homeDir: string
@@ -44,6 +46,16 @@ describe('startupDataMigrations', () => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
     fs.rmSync(homeDir, { recursive: true, force: true })
+  })
+
+  it('keeps local startup available when AI credential migration cannot publish', () => {
+    mockDbGet.mockReturnValue(null)
+    vi.spyOn(aiProviderService, 'migrateLegacyData').mockImplementation(() => {
+      throw new Error('PROVIDER_CREDENTIAL_READBACK_FAILED')
+    })
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(() => runStartupDataMigrations()).not.toThrow()
+    expect(warning).toHaveBeenCalledWith('[AIProviders] AI_PROVIDER_MIGRATION_PENDING')
   })
 
   it('removes legacy web search command references from flat command lists', () => {

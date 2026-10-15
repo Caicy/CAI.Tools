@@ -51,6 +51,7 @@ vi.mock('openai', () => ({
 }))
 
 let stored: AiProviderStore
+let localCredentials: { version: 1; keys: Record<string, string> } | null
 let tempRoot: string
 let ai: (typeof import('../../src/main/api/plugin/ai'))['default']
 let providers: (typeof import('../../src/main/core/aiProviderService'))['default']
@@ -72,7 +73,7 @@ function handler(channel: string): (...args: any[]) => any {
  * 为真实流式适配器生成带结束标记的供应商响应。
  * @returns 供应商流式数据。
  */
-async function* completionStream() {
+async function* completionStream(): AsyncGenerator<unknown, void, unknown> {
   yield { choices: [{ delta: { content: '自配回答' }, finish_reason: 'stop' }] }
 }
 
@@ -85,9 +86,13 @@ beforeEach(async () => {
   vi.resetAllMocks()
   vi.resetModules()
   stored = { version: 2, providers: [] }
-  mocks.dbGet.mockImplementation(() => stored)
-  mocks.dbPut.mockImplementation((_key, value) => {
-    stored = value
+  localCredentials = null
+  mocks.dbGet.mockImplementation((key) =>
+    key === 'local-ai-provider-credentials' ? localCredentials : stored
+  )
+  mocks.dbPut.mockImplementation((key, value) => {
+    if (key === 'local-ai-provider-credentials') localCredentials = value
+    else stored = value
     return { ok: true }
   })
   // 官方替身有可用响应，确保测试能够发现偷偷回退而不是偶然网络失败。
@@ -219,7 +224,7 @@ describe('local plugin AI capability boundary', () => {
     '%s explains a missing API key before external traffic',
     async (channel) => {
       const model = configureProvider()
-      stored.providers[0].apiKey = '  '
+      localCredentials!.keys[stored.providers[0].id] = '  '
       const result = await handler(channel)({ sender }, channel, {
         model,
         messages: [{ role: 'user', content: 'hello' }]
@@ -234,7 +239,7 @@ describe('local plugin AI capability boundary', () => {
   )
   it('retains local provider CRUD and refuses keyless configuration under the existing contract', () => {
     configureProvider()
-    const provider = stored.providers[0]
+    const provider = providers.getStore().providers[0]
     expect(renderer.updateProvider({ ...provider, name: '改名' }).success).toBe(true)
     expect(renderer.setProviderEnabled(provider.id, false).success).toBe(true)
     expect(providers.getModelChoices()).toEqual([])
@@ -249,6 +254,13 @@ describe('local plugin AI capability boundary', () => {
     expect(renderer.deleteProvider(provider.id).success).toBe(true)
     expect(renderer.getAllProviders().providers).toEqual([])
     expectNoOfficialTraffic()
+  })
+  it('shows imported models as needing local credentials without dropping provider metadata', () => {
+    configureProvider()
+    localCredentials!.keys[stored.providers[0].id] = ''
+    expect(providers.getModelChoices()[0].label).toContain('需在本机配置密钥')
+    expect(providers.getStore().providers).toHaveLength(1)
+    expect(providers.getStore().providers[0].apiKey).toBe('')
   })
   it('returns official unavailability through renderer and guarded internal IPC without a success wrapper', async () => {
     const expected = { success: false, code: 'OFFICIAL_CAPABILITY_UNAVAILABLE' }

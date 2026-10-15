@@ -26,9 +26,13 @@ describe('aiProviderService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     stored = null
-    mockDbGet.mockImplementation(() => stored)
-    mockDbPut.mockImplementation((_key: string, value: AiProviderStore) => {
-      stored = value
+    let credentials: unknown = null
+    mockDbGet.mockImplementation((key: string) =>
+      key === 'local-ai-provider-credentials' ? credentials : stored
+    )
+    mockDbPut.mockImplementation((key: string, value: AiProviderStore) => {
+      if (key === 'local-ai-provider-credentials') credentials = value
+      else stored = value
       return { ok: true }
     })
   })
@@ -121,7 +125,9 @@ describe('aiProviderService', () => {
       id: provider.id,
       name: '新名称',
       apiUrl: provider.apiUrl,
-      apiKey: provider.apiKey,
+      apiKey: aiProviderService
+        .getStore()
+        .providers.find((candidate) => candidate.id === provider.id)!.apiKey,
       selectedModels: [{ modelId: 'model-a' }, { modelId: 'model-c' }]
     })
 
@@ -167,7 +173,9 @@ describe('aiProviderService', () => {
         id: firstProvider.id,
         name: firstProvider.name,
         apiUrl: firstProvider.apiUrl,
-        apiKey: firstProvider.apiKey,
+        apiKey: aiProviderService
+          .getStore()
+          .providers.find((candidate) => candidate.id === firstProvider.id)!.apiKey,
         selectedModels: [{ modelId: 'model-a' }]
       }).success
     ).toBe(true)
@@ -249,7 +257,9 @@ describe('aiProviderService', () => {
       id: provider.id,
       name: provider.name,
       apiUrl: provider.apiUrl,
-      apiKey: provider.apiKey,
+      apiKey: aiProviderService
+        .getStore()
+        .providers.find((candidate) => candidate.id === provider.id)!.apiKey,
       selectedModels: [
         {
           modelId: 'reasoning-model',
@@ -308,7 +318,9 @@ describe('aiProviderService', () => {
       id: provider.id,
       name: provider.name,
       apiUrl: provider.apiUrl,
-      apiKey: provider.apiKey,
+      apiKey: aiProviderService
+        .getStore()
+        .providers.find((candidate) => candidate.id === provider.id)!.apiKey,
       selectedModels: [{ modelId: 'reasoning-model', reasoning: null }]
     })
 
@@ -412,7 +424,9 @@ describe('aiProviderService', () => {
         id: provider.id,
         name: provider.name,
         apiUrl: provider.apiUrl,
-        apiKey: provider.apiKey,
+        apiKey: aiProviderService
+          .getStore()
+          .providers.find((candidate) => candidate.id === provider.id)!.apiKey,
         apiFormat: 'openai-responses',
         selectedModels: [{ modelId: 'model-a' }]
       }).success
@@ -427,7 +441,9 @@ describe('aiProviderService', () => {
           id: provider.id,
           name: provider.name,
           apiUrl: provider.apiUrl,
-          apiKey: provider.apiKey,
+          apiKey: aiProviderService
+            .getStore()
+            .providers.find((candidate) => candidate.id === provider.id)!.apiKey,
           apiFormat: 'bogus-format',
           enabled: true,
           selectedModels: [{ ref: 'ref-a', modelId: 'model-a' }]

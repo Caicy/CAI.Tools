@@ -3,6 +3,11 @@ import OpenAI from 'openai'
 import databaseAPI from '../api/shared/database.js'
 import { HOST_STORAGE_KEYS } from '../../shared/storageKeys.js'
 import {
+  loadProviderStore,
+  saveProviderStore,
+  type ProviderStorage
+} from './gitMirror/aiProviderProjection'
+import {
   AI_PROVIDER_STORE_VERSION,
   DEFAULT_AI_API_FORMAT,
   isAiProviderStore,
@@ -117,21 +122,21 @@ export function migrateLegacyAiModels(
  */
 class AiProviderService {
   /**
-   * 读取供应商文档，并在遇到旧数组时立即完成幂等迁移。
+   * 读取供应商元数据并组装本机密钥，旧配置先安全拆分再返回。
    * @returns 当前有效的供应商文档
+   * @throws 凭据迁移或持久化失败时抛错，避免提前删除旧密钥。
    */
   public getStore(): AiProviderStore {
     const raw = databaseAPI.dbGet(HOST_STORAGE_KEYS.aiModels)
     if (isAiProviderStore(raw)) {
-      if (this.normalizeProviderStore(raw)) {
-        databaseAPI.dbPut(HOST_STORAGE_KEYS.aiModels, raw)
-      }
-      return raw
+      const store = loadProviderStore(this.providerStorage())
+      if (this.normalizeProviderStore(store)) this.saveStore(store)
+      return store
     }
 
     if (Array.isArray(raw)) {
       const migrated = migrateLegacyAiModels(raw as LegacyAiModel[])
-      databaseAPI.dbPut(HOST_STORAGE_KEYS.aiModels, migrated)
+      this.saveStore(migrated)
       console.log('[AIProviders] 已将旧版 AI 模型配置迁移为供应商结构')
       return migrated
     }
@@ -142,13 +147,19 @@ class AiProviderService {
   /**
    * 在应用启动阶段迁移旧版 AI 模型文档。
    * @returns 是否实际写入了迁移后的文档
+   * @throws 凭据保存失败时抛错，保留旧完整配置。
    */
   public migrateLegacyData(): boolean {
     const raw = databaseAPI.dbGet(HOST_STORAGE_KEYS.aiModels)
-    if (!Array.isArray(raw)) return false
+    if (!Array.isArray(raw)) {
+      if (!isAiProviderStore(raw) || !raw.providers.some((provider) => 'apiKey' in provider))
+        return false
+      this.getStore()
+      return true
+    }
 
-    // 迁移完成后写回原键，继续沿用现有账户同步与导入路由。
-    databaseAPI.dbPut(HOST_STORAGE_KEYS.aiModels, migrateLegacyAiModels(raw as LegacyAiModel[]))
+    // 先写设备凭据并读回，再发布不含密钥的元数据。
+    this.saveStore(migrateLegacyAiModels(raw as LegacyAiModel[]))
     console.log('[AIProviders] 已将旧版 AI 模型配置迁移为供应商结构')
     return true
   }
@@ -310,7 +321,9 @@ class AiProviderService {
           return {
             id: buildAiModelPublicId(provider.name, model.modelId),
             value: model.ref,
-            label: buildAiModelPublicId(provider.name, model.modelId),
+            label:
+              buildAiModelPublicId(provider.name, model.modelId) +
+              (provider.apiKey.trim() ? '' : '（需在本机配置密钥）'),
             providerId: provider.id,
             providerLabel: provider.name,
             modelId: model.modelId,
@@ -533,12 +546,50 @@ class AiProviderService {
   }
 
   /**
-   * 将完整供应商文档写回账户级存储。
+   * 分别保存设备凭据和供应商元数据，保持运行时返回契约。
    * @param store 待保存的供应商文档
    * @returns 无返回值
+   * @throws 设备凭据写入、读回或元数据写入失败时抛错。
    */
   private saveStore(store: AiProviderStore): void {
-    databaseAPI.dbPut(HOST_STORAGE_KEYS.aiModels, store)
+    saveProviderStore(store, this.providerStorage())
+  }
+
+  /**
+   * 提供同步持久化端口，凭据键由默认 ZTOOLS device 路由承接。
+   * @returns 检查每次写入结果的本机存储端口。
+   */
+  private providerStorage(): ProviderStorage {
+    return {
+      /**
+       * @returns 当前元数据或旧完整文档。
+       */
+      getMetadata: () => databaseAPI.dbGet(HOST_STORAGE_KEYS.aiModels),
+      /**
+       * @returns 当前设备凭据文档。
+       */
+      getCredentials: () => databaseAPI.dbGet(HOST_STORAGE_KEYS.localAiProviderCredentials),
+      /**
+       * 发布无密钥元数据。
+       * @param value 待发布元数据。
+       * @returns 无返回值。
+       * @throws 数据库没有明确报告成功时抛错。
+       */
+      putMetadata: (value) => {
+        if (databaseAPI.dbPut(HOST_STORAGE_KEYS.aiModels, value)?.ok !== true)
+          throw new Error('PROVIDER_METADATA_WRITE_FAILED')
+      },
+      /**
+       * 保存本机凭据，失败时不继续移除旧密钥。
+       * @param value 设备凭据文档。
+       * @returns 无返回值。
+       * @throws 数据库没有明确报告成功时抛错。
+       */
+      putCredentials: (value) => {
+        if (databaseAPI.dbPut(HOST_STORAGE_KEYS.localAiProviderCredentials, value)?.ok !== true)
+          throw new Error('PROVIDER_CREDENTIAL_WRITE_FAILED')
+      }
+    }
   }
 }
 

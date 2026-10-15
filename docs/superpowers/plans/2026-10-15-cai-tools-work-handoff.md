@@ -1,6 +1,6 @@
 # CAI.Tools：讨论结论与 Work 交接任务
 
-日期：2026-10-15。最新状态：计划 A（A0–A6）已实施并完成本机验收收尾，限制与实际结果见[验收记录](./evidence/local-edition-acceptance.md)；计划 B 已获授权启动，B1 基础模块已实施并验证，B2–B9 待实施；见[阶段证据](./evidence/git-mirror-acceptance.md)。改动未提交。下文的“尚未实施”“首轮”等状态保留为交接时历史基线，不代表当前进度。
+日期：2026-10-15。最新状态：计划 A（A0–A6）已实施并完成本机验收收尾，限制与实际结果见[验收记录](./evidence/local-edition-acceptance.md)；计划 B 已获授权启动，B1、B2 已实施并完成本机验证，B3–B9 待实施；见[阶段证据](./evidence/git-mirror-acceptance.md)。A+B1 已按用户要求本地提交为 bdf563c，B2 改动未提交。下文的“尚未实施”“首轮”等状态保留为交接时历史基线，不代表当前进度。
 
 ## 1. 交接目标与首轮任务
 
