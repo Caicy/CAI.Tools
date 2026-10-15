@@ -143,12 +143,12 @@ ztools/
 ├── resources/            # 资源文件
 │   ├── lib/             # 原生模块（.node）
 │   └── preload.js       # 插件 Preload
-└── CLAUDE.md            # 完整技术文档
+└── AGENTS.md            # 开发规范与技术文档
 ```
 
 ## 📚 文档
 
-- [CLAUDE.md](./CLAUDE.md) - 完整技术文档和架构说明
+- [AGENTS.md](./AGENTS.md) - 开发规范、架构说明和 API 指南
 - [开发命令](#开发命令) - 常用命令说明
 - [插件开发](#插件开发) - 插件开发指南
 

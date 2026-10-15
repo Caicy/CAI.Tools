@@ -143,12 +143,12 @@ ztools/
 ├── resources/            # Resource files
 │   ├── lib/             # Native modules (.node)
 │   └── preload.js       # Plugin preload
-└── CLAUDE.md            # Complete technical documentation
+└── AGENTS.md            # Development rules and technical documentation
 ```
 
 ## 📚 Documentation
 
-- [CLAUDE.md](./CLAUDE.md) - Complete technical documentation and architecture description
+- [AGENTS.md](./AGENTS.md) - Development rules, architecture, and API guidelines
 - [Development Commands](#development-commands) - Common command reference
 - [Plugin Development](#plugin-development) - Plugin development guide
 

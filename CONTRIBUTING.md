@@ -192,8 +192,8 @@ function search(query: string): SearchResult {
 
 如果你的改动涉及：
 
-- 新功能：更新 README.md 和 CLAUDE.md
-- API 变更：更新 CLAUDE.md 中的 API 文档
+- 新功能：更新 README.md 和 AGENTS.md
+- API 变更：更新 AGENTS.md 中的 API 文档
 - 配置变更：更新相关文档
 - Bug 修复：可选择更新文档
 
@@ -202,7 +202,7 @@ function search(query: string): SearchResult {
 如果你有任何问题，可以：
 
 - 在 Issues 中提问
-- 查看 [CLAUDE.md](./CLAUDE.md) 技术文档
+- 查看 [AGENTS.md](./AGENTS.md) 开发规范与技术文档
 - 查看现有的 Pull Requests
 
 ## 📜 行为准则

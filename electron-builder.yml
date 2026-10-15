@@ -9,7 +9,7 @@ files:
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml}'
-  - '!{CHANGELOG.md,changelog.md,README.md,README_EN.md,CONTRIBUTING.md,CLAUDE.md}'
+  - '!{CHANGELOG.md,changelog.md,README.md,README_EN.md,CONTRIBUTING.md}'
   - '!{.env,.env.*,.npmrc,.gitmodules,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,tsconfig.*.tsbuildinfo,vitest.config.*}'
   - '!{.claude/**,.githooks/**,.github/**}'
