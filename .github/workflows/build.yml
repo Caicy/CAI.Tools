@@ -76,13 +76,16 @@ jobs:
           $manifestBackup = Join-Path $env:RUNNER_TEMP 'cai-tools-pnpm-workspace.yaml'
           Move-Item -LiteralPath pnpm-workspace.yaml -Destination $manifestBackup
           try {
-            pnpm exec electron-builder --win --publish never
+            # Invoke the installed binary directly; pnpm exec would reinstall the
+            # workspace after noticing the temporarily relocated manifest.
+            & .\node_modules\.bin\electron-builder.cmd --win --publish never
             if ($LASTEXITCODE -ne 0) {
               throw 'Windows packaging failed.'
             }
           } finally {
             # Restore the checkout even when packaging fails.
-            Move-Item -LiteralPath $manifestBackup -Destination pnpm-workspace.yaml
+            Copy-Item -LiteralPath $manifestBackup -Destination pnpm-workspace.yaml -Force
+            Remove-Item -LiteralPath $manifestBackup
           }
 
       - name: Verify packages and create checksums
