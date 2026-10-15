@@ -1,290 +1,121 @@
-name: Build
+name: Windows Build
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: '预发布版本号，例如 3.0.0-beta.1'
+        description: '试用版本号（须与此分支 package.json 一致）'
         required: true
-      prerelease:
-        description: '是否发布为 GitHub Pre-release'
+        default: '3.2.0-local.1'
+      publish_release:
+        description: '发布 Windows 安装包和 ZIP 到 GitHub Release'
         type: boolean
         default: true
-      publish_release:
-        description: '是否发布到 GitHub Release'
+      prerelease:
+        description: '标记为试用版 Pre-release'
         type: boolean
         default: true
 
 permissions:
   contents: write
 
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build:
-    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # macOS x64 (Intel, available until Aug 2027)
-          - os: macos-15-intel
-            arch: x64
-            build_cmd: pnpm run build:mac:x64
-            # electron-builder expects the certificate subject without its type prefix.
-            signing_identity: 'Zhengzhou Zhongsen Yunke Information Technology Co., Ltd. (4S4HH8375U)'
-          # macOS ARM64 (Apple Silicon)
-          - os: macos-14
-            arch: arm64
-            build_cmd: pnpm run build:mac:arm64
-            signing_identity: 'Zhengzhou Zhongsen Yunke Information Technology Co., Ltd. (4S4HH8375U)'
-          # Windows x64
-          - os: windows-latest
-            arch: x64
-            build_cmd: pnpm run build:win
-            signing_identity: ''
-
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 40
     steps:
-      - name: Check out git repository
+      - name: Check out source and API types
         uses: actions/checkout@v4
-
-      - name: Resolve release metadata
-        id: release_meta
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
-          INPUT_PRERELEASE: ${{ inputs.prerelease }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            version="${INPUT_VERSION#v}"
-            prerelease="${INPUT_PRERELEASE:-true}"
-          else
-            version="${GITHUB_REF_NAME#v}"
-            case "$version" in
-              *-*) prerelease="true" ;;
-              *) prerelease="false" ;;
-            esac
-          fi
-
-          if [ -z "$version" ]; then
-            echo "Release version is required" >&2
-            exit 1
-          fi
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
-          echo "make_latest=$([ "$prerelease" = "true" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
-
-      - name: Set package version
-        env:
-          RELEASE_VERSION: ${{ steps.release_meta.outputs.version }}
-        run: |
-          node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); pkg.version=process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2)+'\n');"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
         with:
-          version: 9
+          submodules: recursive
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Verify requested version
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          # Reject mismatched tags rather than silently publishing a different package version.
+          $version = (Get-Content -LiteralPath package.json -Raw | ConvertFrom-Json).version
+          if ($env:REQUESTED_VERSION.TrimStart('v') -ne $version) {
+            throw "Requested version must match package.json ($version)."
+          }
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
         with:
-          python-version: '3.10'
+          version: 11.18.0
 
-      - name: Install Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'pnpm'
-
-      - name: Install plugin dependencies
-        run: |
-          cd internal-plugins/setting
-          pnpm install
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            internal-plugins/setting/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Prepare App Store Connect API key
-        if: startsWith(matrix.os, 'macos')
-        shell: bash
-        env:
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      - name: Build Windows installer and ZIP
+        run: pnpm build:win
+
+      - name: Verify packages and create checksums
+        id: metadata
+        shell: pwsh
         run: |
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          # Require both supported distribution formats before uploading or publishing.
+          $installers = @(Get-ChildItem -LiteralPath dist -Filter '*-setup.exe' -File)
+          $archives = @(Get-ChildItem -LiteralPath dist -Filter '*.zip' -File)
+          if ($installers.Count -ne 1 -or $archives.Count -ne 1) {
+            throw 'Expected exactly one Windows installer and one ZIP package.'
+          }
+          $packages = @($installers) + @($archives)
+          $checksums = foreach ($package in $packages) {
+            $digest = Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256
+            '{0}  {1}' -f $digest.Hash.ToLowerInvariant(), $package.Name
+          }
+          $checksums | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding utf8
 
-          # Decode the secret only into the ephemeral runner workspace.
-          node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1], Buffer.from(process.env.APPLE_API_KEY_BASE64, "base64"))' "$key_path"
+          # Derive the release tag from the version actually built in this checkout.
+          $version = (Get-Content -LiteralPath package.json -Raw | ConvertFrom-Json).version
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          "Windows x64 build: v$version ($env:GITHUB_SHA)" >> $env:GITHUB_STEP_SUMMARY
 
-          test -s "$key_path"
-          grep -q 'BEGIN PRIVATE KEY' "$key_path"
-          chmod 600 "$key_path"
-          echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
-
-      # 统一构建命令
-      - name: Build and Package
-        env:
-          CSC_LINK: ${{ startsWith(matrix.os, 'macos') && secrets.MAC_CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ startsWith(matrix.os, 'macos') && secrets.MAC_CSC_KEY_PASSWORD || '' }}
-          CSC_NAME: ${{ matrix.signing_identity }}
-          APPLE_API_KEY_ID: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_API_KEY_ID || '' }}
-          APPLE_API_ISSUER: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_API_ISSUER || '' }}
-          APPLE_TEAM_ID: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_TEAM_ID || '' }}
-        run: ${{ matrix.build_cmd }}
-
-      - name: Verify macOS signature and notarization
-        if: startsWith(matrix.os, 'macos')
-        shell: bash
-        run: |
-          app_path="$(find dist -maxdepth 3 -type d -name '*.app' -print -quit)"
-          if [ -z "$app_path" ]; then
-            echo 'No macOS app bundle found in dist/' >&2
-            exit 1
-          fi
-
-          # Verify the complete nested bundle before artifacts are uploaded.
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-          xcrun stapler validate "$app_path"
-          spctl --assess --type execute --verbose=4 "$app_path"
-
-      # 上传平台产物（只上传指定文件类型）
-      - name: Upload build artifacts
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: artifact-${{ matrix.os }}-${{ matrix.arch }}
+          name: CAI.Tools-windows-x64
+          if-no-files-found: error
           path: |
-            dist/*.exe
-            dist/*.dmg
+            dist/*-setup.exe
             dist/*.zip
-            dist/*.yml
-            dist/*.blockmap
-          if-no-files-found: warn
+            dist/SHA256SUMS.txt
 
-  release:
-    name: Release
-    needs: build
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_release }}
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.release_meta.outputs.tag }}
-
-    steps:
-      - name: Check out git repository
-        uses: actions/checkout@v4
-
-      - name: Resolve release metadata
-        id: release_meta
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
-          INPUT_PRERELEASE: ${{ inputs.prerelease }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            version="${INPUT_VERSION#v}"
-            prerelease="${INPUT_PRERELEASE:-true}"
-          else
-            version="${GITHUB_REF_NAME#v}"
-            case "$version" in
-              *-*) prerelease="true" ;;
-              *) prerelease="false" ;;
-            esac
-          fi
-
-          if [ -z "$version" ]; then
-            echo "Release version is required" >&2
-            exit 1
-          fi
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
-          echo "make_latest=$([ "$prerelease" = "true" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
-
-      - name: Set package version
-        env:
-          RELEASE_VERSION: ${{ steps.release_meta.outputs.version }}
-        run: |
-          node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); pkg.version=process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2)+'\n');"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 9
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Download macOS x64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: artifact-macos-15-intel-x64
-          path: dist/mac-x64
-
-      - name: Download macOS ARM64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: artifact-macos-14-arm64
-          path: dist/mac-arm64
-
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: artifact-windows-latest-x64
-          path: dist/windows
-
-      # 合并 macOS 双架构元数据，并规范化 Windows 与 macOS 的更新清单。
-      - name: Generate update info
-        env:
-          RELEASE_VERSION: ${{ steps.release_meta.outputs.version }}
-          WINDOWS_UPDATE_METADATA: dist/windows/latest.yml
-          MAC_X64_UPDATE_METADATA: dist/mac-x64/latest-mac.yml
-          MAC_ARM64_UPDATE_METADATA: dist/mac-arm64/latest-mac.yml
-          UPDATE_METADATA_OUTPUT_DIR: dist/release
-          REQUIRE_UPDATE_METADATA: 'true'
-        run: pnpm updater
-
-      # 上传安装包、标准完整更新包、blockmap 和最终元数据。
-      - name: Upload Release Assets
+      - name: Publish GitHub Release
+        if: inputs.publish_release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ steps.release_meta.outputs.tag }}
-          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: CAI.Tools ${{ steps.metadata.outputs.tag }}
+          tag_name: ${{ steps.metadata.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          prerelease: ${{ steps.release_meta.outputs.prerelease }}
-          make_latest: ${{ steps.release_meta.outputs.make_latest }}
-          body_path: changelog.md
-          files: |
-            dist/windows/*.exe
-            dist/windows/*.zip
-            dist/windows/*.blockmap
-            dist/mac-x64/*.dmg
-            dist/mac-x64/*.zip
-            dist/mac-x64/*.blockmap
-            dist/mac-arm64/*.dmg
-            dist/mac-arm64/*.zip
-            dist/mac-arm64/*.blockmap
-            dist/release/*.yml
+          prerelease: ${{ inputs.prerelease }}
+          make_latest: false
+          fail_on_unmatched_files: true
+          body: |
+            CAI.Tools Windows x64 本地版试用构建。
 
-      - name: Sync release metadata to ZTools server
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ steps.release_meta.outputs.version }}
-          RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
-          ZTOOLS_RELEASE_SYNC_TOKEN: ${{ secrets.ZTOOLS_RELEASE_SYNC_TOKEN }}
-          ZTOOLS_RELEASE_SYNC_URL: https://z-tools.top
-          WINDOWS_UPDATE_METADATA: dist/release/latest.yml
-          MAC_UPDATE_METADATA: dist/release/latest-mac.yml
-        run: node scripts/sync-release-server.mjs
+            下载 `*-setup.exe` 安装，或下载 ZIP 解压试用。SHA256 校验值见 SHA256SUMS.txt。
+
+            已包含本地免登录版、Git 镜像协议 B1、插件数据投影与 AI 凭据隔离 B2。Git 自动同步和多机迁移尚未完成。
+
+            此构建尚需实际安装试用验证。
+          files: |
+            dist/*-setup.exe
+            dist/*.zip
+            dist/SHA256SUMS.txt
