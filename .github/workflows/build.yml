@@ -6,7 +6,7 @@ on:
       version:
         description: '试用版本号（须与此分支 package.json 一致）'
         required: true
-        default: '3.2.0-local.1'
+        default: '3.2.0-local.2'
       publish_release:
         description: '发布 Windows 安装包和 ZIP 到 GitHub Release'
         type: boolean
@@ -132,6 +132,8 @@ jobs:
           fail_on_unmatched_files: true
           body: |
             CAI.Tools Windows x64 本地版试用构建。
+
+            修复第三方插件误报“ZTools 版本不受支持”：插件 API 返回上游兼容基线 3.2.0，应用与设置页继续显示本地版完整版本号。
 
             下载 `*-setup.exe` 安装，或下载 ZIP 解压试用。SHA256 校验值见 SHA256SUMS.txt。
 
