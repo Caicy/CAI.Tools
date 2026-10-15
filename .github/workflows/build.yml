@@ -6,7 +6,7 @@ on:
       version:
         description: '试用版本号（须与此分支 package.json 一致）'
         required: true
-        default: '3.2.0-local.2'
+        default: '3.2.0-local.3'
       publish_release:
         description: '发布 Windows 安装包和 ZIP 到 GitHub Release'
         type: boolean
@@ -133,11 +133,20 @@ jobs:
           body: |
             CAI.Tools Windows x64 本地版试用构建。
 
-            修复第三方插件误报“ZTools 版本不受支持”：插件 API 返回上游兼容基线 3.2.0，应用与设置页继续显示本地版完整版本号。
+            新增“字符串处理”内置插件，重启后可在搜索框输入“字符串处理”使用：
+
+            - SQL IN 拼接：多行或表格列转逗号列表，自动区分数字与文本，转义单引号，保留长数字精度和前导零编号。
+            - 大小写与命名：小写、大写、大驼峰、小驼峰、下划线和短横线。
+            - Unicode 与中文双向转换，支持代理对和扩展码点。
+            - 行整理：去重、去空行、去首尾空格。
+
+            支持实时预览、剪贴板导入与复制、Ctrl/Cmd+Enter、明暗主题；输入在本机处理，不保存历史。
 
             下载 `*-setup.exe` 安装，或下载 ZIP 解压试用。SHA256 校验值见 SHA256SUMS.txt。
 
-            已包含本地免登录版、Git 镜像协议 B1、插件数据投影与 AI 凭据隔离 B2。Git 自动同步和多机迁移尚未完成。
+            保留本地免登录版、插件兼容版本修复、Git 镜像协议 B1、插件数据投影与 AI 凭据隔离 B2。Git 自动同步和多机迁移尚未完成。
+
+            源码验证：772 项单元测试通过，Electron E2E 6 项通过、3 项原有账号流程跳过，主项目类型检查通过。
 
             此构建尚需实际安装试用验证。
           files: |

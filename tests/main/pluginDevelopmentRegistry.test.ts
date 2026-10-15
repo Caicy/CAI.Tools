@@ -54,18 +54,21 @@ describe('pluginDevelopmentRegistry', () => {
     expect(result.reason).toContain('/workspace/demo')
   })
 
-  it('rejects upsert for built-in plugin names', () => {
-    const registry = { version: 3, projects: {} }
+  it.each(['setting', 'system', 'string-tools'])(
+    'rejects upsert for built-in plugin %s',
+    (name) => {
+      const registry = { version: 3, projects: {} }
 
-    const result = upsertByConfig({
-      registry,
-      pluginPath: '/workspace/setting',
-      pluginConfig: { name: 'setting', title: 'Setting', version: '1.0.0' }
-    })
+      const result = upsertByConfig({
+        registry,
+        pluginPath: `/workspace/${name}`,
+        pluginConfig: { name, title: 'Built in', version: '1.0.0' }
+      })
 
-    expect(result.success).toBe(false)
-    expect(result.reason).toMatch(/not allowed/)
-  })
+      expect(result.success).toBe(false)
+      expect(result.reason).toMatch(/not allowed/)
+    }
+  )
 
   it('updates paths when registry entry already exists at the same path', () => {
     const registry = {

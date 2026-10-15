@@ -137,7 +137,7 @@ export const DEV_PROJECT_REGISTRY_DB_KEY = 'dev-plugin-registry'
 /** 当前注册表文档版本号，版本不匹配时重建空文档 */
 const DEV_PROJECT_REGISTRY_VERSION = 3 as const
 /** 内置插件名称集合，这些名称不允许作为开发项目注册 */
-const BUILT_IN_NAMES = new Set(['setting', 'system'])
+const BUILT_IN_NAMES = new Set(['setting', 'system', 'string-tools'])
 /** 合法的绑定状态枚举值，用于反序列化时校验 */
 const VALID_BINDING_STATUSES = new Set<DevProjectBindingStatus>([
   'ready',
@@ -498,7 +498,7 @@ export function validateRepairConfigSelection(
 
 /**
  * 为开发模式项目构建「已安装插件」快照对象。
- * 内置插件（setting、system）保留原名；用户开发插件名称自动添加 __dev 后缀。
+ * 内置插件保留原名；用户开发插件名称自动添加 __dev 后缀。
  * @param pluginPath - 插件项目的目录路径
  * @param pluginConfig - 从 plugin.json 解析的配置
  * @returns 可直接写入已安装插件列表的快照对象
@@ -509,7 +509,7 @@ export function buildInstalledDevelopmentPlugin(
 ): PluginInstallRecord {
   const normalizedPath = resolvePath(pluginPath)
   const baseName = pluginConfig.name || path.basename(normalizedPath)
-  // 内置插件（setting、system）在开发模式下仅设 isDevelopment: true 而不加 __dev 后缀
+  // 内置插件在开发模式下仅设 isDevelopment: true 而不加 __dev 后缀。
   const effectiveName = BUILT_IN_NAMES.has(baseName) ? baseName : toDevPluginName(baseName)
   return {
     name: effectiveName,

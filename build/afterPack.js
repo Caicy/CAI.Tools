@@ -271,7 +271,7 @@ module.exports = async function (context) {
   // 复制内置插件
   console.log('\n开始复制内置插件...')
   const internalPluginsDir = path.resolve(__dirname, '../internal-plugins')
-  const pluginNames = ['setting', 'system'] // 内置插件列表
+  const pluginNames = ['setting', 'system', 'string-tools'] // 内置插件列表
 
   try {
     let resourcesPath = ''
@@ -304,7 +304,7 @@ module.exports = async function (context) {
         }
         console.log(`  已复制 dist/ 目录内容到: ${pluginDestDir}`)
       } else {
-        // 如果没有 dist 目录，复制 public 目录（无界面插件，如 system）
+        // 静态界面及无界面插件无需编译，直接复制 public 资源。
         const publicSrc = path.join(pluginSrcDir, 'public')
         if (await pathExists(publicSrc)) {
           const files = await fs.readdir(publicSrc)

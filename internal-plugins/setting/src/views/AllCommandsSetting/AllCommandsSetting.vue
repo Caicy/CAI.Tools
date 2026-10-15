@@ -277,7 +277,7 @@ async function handleAppMenuSelect(key: string, cmd: Command): Promise<void> {
 }
 
 // 内置插件名称列表（与主进程保持一致）
-const INTERNAL_PLUGIN_NAMES = ['setting', 'system']
+const INTERNAL_PLUGIN_NAMES = ['setting', 'system', 'string-tools']
 
 // 判断是否为内置插件
 function isInternalPlugin(pluginName: string): boolean {

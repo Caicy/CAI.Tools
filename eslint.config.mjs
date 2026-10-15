@@ -19,6 +19,16 @@ export default defineConfig(
   tseslint.configs.recommended,
   eslintPluginVue.configs['flat/recommended'],
   {
+    // 静态内置插件直接运行 JavaScript，返回契约由 JSDoc 描述。
+    files: ['internal-plugins/string-tools/public/*.{js,mjs}'],
+    rules: { '@typescript-eslint/explicit-function-return-type': 'off' }
+  },
+  {
+    // Electron 自定义 preload 由宿主按 CommonJS 加载。
+    files: ['internal-plugins/string-tools/public/preload.js'],
+    rules: { '@typescript-eslint/no-require-imports': 'off' }
+  },
+  {
     files: ['**/*.vue'],
     languageOptions: {
       parser: vueParser,

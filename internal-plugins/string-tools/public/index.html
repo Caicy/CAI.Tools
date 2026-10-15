@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
+    />
+    <title>字符串处理</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <span class="eyebrow">TEXT WORKBENCH</span>
+          <h1>字符串处理<span class="local">本地处理</span></h1>
+        </div>
+        <button id="clear" class="quiet">清空</button>
+      </header>
+      <nav aria-label="处理工具">
+        <button data-tab="sql" aria-pressed="true">SQL IN 拼接</button
+        ><button data-tab="case" aria-pressed="false">大小写与命名</button
+        ><button data-tab="unicode" aria-pressed="false">Unicode</button
+        ><button data-tab="lines" aria-pressed="false">行整理</button>
+      </nav>
+      <section class="options" aria-label="处理选项">
+        <div data-options="sql">
+          <label
+            >值类型
+            <select id="sql-mode">
+              <option value="auto">自动识别</option>
+              <option value="text">全部文本</option>
+              <option value="number">全部数字</option>
+            </select></label
+          ><label><input id="sql-wrap" type="checkbox" />带括号 ( )</label
+          ><label><input id="sql-trim" type="checkbox" checked />去首尾空格</label
+          ><label><input id="sql-unique" type="checkbox" checked />去重</label>
+        </div>
+        <div data-options="case" hidden>
+          <label
+            >转换为
+            <select id="case-mode">
+              <option value="lower">小写 lowercase</option>
+              <option value="upper">大写 UPPERCASE</option>
+              <option value="pascal">大驼峰 PascalCase</option>
+              <option value="camel">小驼峰 camelCase</option>
+              <option value="snake">下划线 snake_case</option>
+              <option value="kebab">短横线 kebab-case</option>
+            </select></label
+          ><span class="subtle">每行独立转换</span>
+        </div>
+        <div data-options="unicode" hidden>
+          <label
+            >转换方向
+            <select id="unicode-mode">
+              <option value="decode">Unicode → 中文 / 文本</option>
+              <option value="encode">中文 / 文本 → Unicode</option>
+            </select></label
+          >
+        </div>
+        <div data-options="lines" hidden>
+          <label><input id="lines-trim" type="checkbox" checked />去首尾空格</label
+          ><label><input id="lines-unique" type="checkbox" checked />去重</label
+          ><span class="subtle">忽略空行 · 保持原顺序</span>
+        </div>
+      </section>
+      <p id="hint" class="hint"></p>
+      <section class="editors">
+        <div class="editor">
+          <div class="editor-heading">
+            <label for="source">原始文本</label><button id="paste" class="quiet">读取剪贴板</button>
+          </div>
+          <textarea
+            id="source"
+            spellcheck="false"
+            placeholder="粘贴数据表的一列，每行一个值…"
+          ></textarea>
+          <div id="source-count" class="count">0 字符 · 0 行</div>
+        </div>
+        <div class="editor result">
+          <div class="editor-heading">
+            <label for="output">处理结果</label><span class="live">实时预览</span>
+          </div>
+          <textarea
+            id="output"
+            spellcheck="false"
+            readonly
+            wrap="off"
+            placeholder="处理结果将在这里显示"
+          ></textarea>
+          <div id="result-count" class="count">等待输入</div>
+        </div>
+      </section>
+      <footer>
+        <p id="status" role="status" aria-live="polite">内容仅在本机处理，不保存历史。</p>
+        <button id="copy" class="primary" disabled>复制结果 <kbd>Ctrl ↵</kbd></button>
+      </footer>
+    </main>
+    <script type="module" src="app.mjs"></script>
+  </body>
+</html>
