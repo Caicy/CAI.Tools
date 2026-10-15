@@ -1,0 +1,106 @@
+name: Windows Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '发布 Windows 安装包和 ZIP 到 GitHub Release'
+        type: boolean
+        default: true
+      prerelease:
+        description: '标记为试用版 Pre-release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out source and API types
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            internal-plugins/setting/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows installer and ZIP
+        run: pnpm build:win
+
+      - name: Verify packages and create checksums
+        id: metadata
+        shell: pwsh
+        run: |
+          # Require both supported distribution formats before uploading or publishing.
+          $installers = @(Get-ChildItem -LiteralPath dist -Filter '*-setup.exe' -File)
+          $archives = @(Get-ChildItem -LiteralPath dist -Filter '*.zip' -File)
+          if ($installers.Count -ne 1 -or $archives.Count -ne 1) {
+            throw 'Expected exactly one Windows installer and one ZIP package.'
+          }
+          $packages = @($installers) + @($archives)
+          $checksums = foreach ($package in $packages) {
+            $digest = Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256
+            '{0}  {1}' -f $digest.Hash.ToLowerInvariant(), $package.Name
+          }
+          $checksums | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding utf8
+
+          # Derive the release tag from the version actually built in this checkout.
+          $version = (Get-Content -LiteralPath package.json -Raw | ConvertFrom-Json).version
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          "Windows x64 build: v$version ($env:GITHUB_SHA)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CAI.Tools-windows-x64
+          if-no-files-found: error
+          path: |
+            dist/*-setup.exe
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        if: inputs.publish_release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: CAI.Tools ${{ steps.metadata.outputs.tag }}
+          tag_name: ${{ steps.metadata.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ inputs.prerelease }}
+          make_latest: false
+          fail_on_unmatched_files: true
+          body: |
+            CAI.Tools Windows x64 本地版试用构建。
+
+            下载 `*-setup.exe` 安装，或下载 ZIP 解压试用。SHA256 校验值见 SHA256SUMS.txt。
+
+            已包含本地免登录版、Git 镜像协议 B1、插件数据投影与 AI 凭据隔离 B2。Git 自动同步和多机迁移尚未完成。
+
+            此构建尚需实际安装试用验证。
+          files: |
+            dist/*-setup.exe
+            dist/*.zip
+            dist/SHA256SUMS.txt
