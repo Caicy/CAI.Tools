@@ -11,6 +11,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    setupFiles: ['./tests/setup/isolatedData.ts'],
+    // 限制 Windows worker 争用，避免全量测试的模块转换挤占单例初始化时限。
+    maxWorkers: 4,
     include: ['tests/**/*.test.ts']
   },
   resolve: {

@@ -21,7 +21,6 @@ const props = withDefaults(
     showDisableToggle?: boolean
     showDetail?: boolean
     showCommands?: boolean
-    showComments?: boolean
     showData?: boolean
     showSize?: boolean
     showDownloadCount?: boolean
@@ -97,12 +96,16 @@ const {
   plugin: pluginRef,
   isRunning: isRunningRef,
   showDetail: props.showDetail,
-  showComments: props.showComments,
   showCommands: props.showCommands,
   showData: props.showData,
   initialTab: props.initialTab
 })
 
+/**
+ * 切换可用的本地详情标签并通知调用方。
+ * @param tabId 要显示的详情标签。
+ * @returns 无返回值。
+ */
 function onSwitchTab(tabId: TabId): void {
   switchTab(tabId)
   emit('tab-switch', tabId)
@@ -223,11 +226,7 @@ function onSwitchTab(tabId: TabId): void {
       @switch-tab="onSwitchTab"
       @toggle-data-detail="toggleDataDetail"
       @clear-all-data="handleClearAllData"
-    >
-      <template #extra-tabs>
-        <slot name="extra-tabs" />
-      </template>
-    </PluginDetailTabs>
+    />
   </DetailPanel>
 </template>
 

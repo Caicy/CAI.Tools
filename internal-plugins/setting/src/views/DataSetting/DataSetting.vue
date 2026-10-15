@@ -4,7 +4,6 @@ import { useToast, AdaptiveIcon, DetailPanel } from '@/components'
 import ProgressCircleButton from '@/components/common/ProgressCircleButton/ProgressCircleButton.vue'
 import { weightedSearch } from '@/utils'
 import { useZtoolsSubInput } from '@/composables'
-import { ACCOUNT_CHANGED_EVENT } from '@/composables/useZToolsAccount'
 
 const { success, error, confirm } = useToast()
 
@@ -125,7 +124,6 @@ const selectedDocKey = ref('')
 const currentDocContent = ref<any>(null)
 const currentDocType = ref<'document' | 'attachment'>('document')
 const docListAnimation = ref('slide') // 二级页面的动画名称，完全手动控制
-let removeAccountStorageListener: (() => void) | undefined
 let removeDownloadProgressListener: (() => void) | undefined
 let loadRequestId = 0
 
@@ -264,13 +262,6 @@ async function downloadPlugin(pluginData: PluginData): Promise<void> {
     installingPlugin.value = null
     clearDownloadState(pluginData.pluginName)
   }
-}
-
-async function handleAccountStorageChanged(): Promise<void> {
-  closeDocDetailModal()
-  closeDocListModal()
-  isLoaded.value = false
-  await loadPluginData()
 }
 
 // 查看插件文档
@@ -432,23 +423,31 @@ function handleKeydown(e: KeyboardEvent): void {
   }
 }
 
-onMounted(() => {
-  loadPluginData()
+/**
+ * 进入数据页面时刷新本机数据，并监听当前页面使用的交互事件。
+ * @returns 无返回值。
+ */
+function initializeDataPage(): void {
+  // 首次进入刷新统计；安装、删除和清空操作继续由各自流程刷新。
+  void loadPluginData()
   window.addEventListener('keydown', handleKeydown, true)
-  window.addEventListener(ACCOUNT_CHANGED_EVENT, handleAccountStorageChanged)
-  removeAccountStorageListener = window.ztools.internal.onSyncAccountStorageChanged?.(() => {
-    handleAccountStorageChanged()
-  })
   removeDownloadProgressListener =
     window.ztools.internal.onPluginMarketDownloadProgress?.(handleDownloadProgress)
-})
+}
 
-onUnmounted(() => {
+/**
+ * 离开数据页面时释放键盘与插件下载进度监听。
+ * @returns 无返回值。
+ */
+function cleanupDataPage(): void {
+  // 仅释放本页面注册的监听，避免路由切换后重复处理本机操作。
   window.removeEventListener('keydown', handleKeydown, true)
-  window.removeEventListener(ACCOUNT_CHANGED_EVENT, handleAccountStorageChanged)
-  removeAccountStorageListener?.()
   removeDownloadProgressListener?.()
-})
+  removeDownloadProgressListener = undefined
+}
+
+onMounted(initializeDataPage)
+onUnmounted(cleanupDataPage)
 </script>
 
 <template>

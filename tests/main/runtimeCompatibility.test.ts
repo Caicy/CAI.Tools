@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   checkRuntimeCompatibility,
   EXPECTED_ELECTRON_VERSION,
-  FULL_INSTALL_RELEASE_URL
+  LOCAL_RUNTIME_REBUILD_INSTRUCTIONS
 } from '../../src/main/runtimeCompatibility'
 
 describe('checkRuntimeCompatibility', () => {
-  it('uses the GitHub latest Release page for blocked runtime migration', () => {
-    expect(FULL_INSTALL_RELEASE_URL).toBe('https://github.com/ZToolsCenter/ZTools/releases/latest')
+  it('directs incompatible local builds to rebuild from local edition source', () => {
+    expect(LOCAL_RUNTIME_REBUILD_INSTRUCTIONS).toContain('CAI.Tools 本地版源码')
+    expect(LOCAL_RUNTIME_REBUILD_INSTRUCTIONS).toContain('重新安装依赖并构建')
+    expect(LOCAL_RUNTIME_REBUILD_INSTRUCTIONS).not.toContain('https://')
   })
 
   it.each(['win32', 'darwin'] as const)(

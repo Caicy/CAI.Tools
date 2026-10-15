@@ -1,7 +1,7 @@
 {
-  "name": "ZTools",
-  "version": "3.2.0",
-  "description": "ZTools",
+  "name": "CAI.Tools",
+  "version": "3.2.0-local.1",
+  "description": "CAI.Tools 本地工具箱",
   "main": "./out/main/index.js",
   "author": "ZToolsCenter",
   "homepage": "https://github.com/ZToolsCenter/ZTools",
@@ -104,14 +104,5 @@
     "vue": "^3.5.21",
     "vue-eslint-parser": "^10.2.0",
     "vue-tsc": "^3.0.7"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "esbuild",
-      "lmdb",
-      "msgpackr-extract",
-      "uiohook-napi"
-    ]
   }
 }

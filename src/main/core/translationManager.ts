@@ -2,8 +2,9 @@ import { Worker } from 'worker_threads'
 import path from 'path'
 import fs from 'fs'
 import https from 'https'
-import { app, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import databaseAPI from '../api/shared/database.js'
+import { getZToolsRoot } from './appData/appDataPaths'
 
 const TRANSLATION_DIR = 'bergamot-translation'
 
@@ -77,10 +78,14 @@ class TranslationManager {
     { resolve: (value: any) => void; reject: (reason: any) => void }
   >()
 
+  /**
+   * 在当前本地数据根下准备翻译资源位置，并注册入口、恢复功能开关。
+   * @returns 无返回值。
+   */
   init(): void {
-    // 使用无空格路径，避免 Bergamot WASM 脚本的 URL 编码问题
-    // macOS 的 Application Support 含空格，会导致 %20 路径错误
-    this.translationDir = path.join(app.getPath('home'), '.ztools', TRANSLATION_DIR)
+    // 翻译资源必须跟随显式数据根，不能读取或写入原版 .ztools；Worker URL 兼容修补处理路径编码。
+    this.translationDir = path.join(getZToolsRoot(), TRANSLATION_DIR)
+    // 先固定资源位置，再允许 IPC 或已保存的开关触发初始化。
     this.setupIPC()
     this.loadConfig()
   }

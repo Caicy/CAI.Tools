@@ -31,7 +31,7 @@ export interface DocItem {
   type: 'document' | 'attachment'
 }
 
-export type TabId = 'detail' | 'releases' | 'commands' | 'data' | 'comments'
+export type TabId = 'detail' | 'releases' | 'commands' | 'data'
 
 export interface TabItem {
   id: TabId

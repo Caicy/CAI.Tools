@@ -23,8 +23,8 @@ import windowAPI from '../renderer/window.js'
 import pluginToolsAPI from './tools'
 import databaseAPI from '../shared/database'
 import { analyzeImage } from '../shared/imageAnalysis'
-import updaterAPI from '../updater.js'
-import notificationsAPI from '../renderer/notifications.js'
+import { unavailableOfficialCapability } from '../../../shared/localEdition'
+import localUpdater from '../localUpdater'
 import {
   COMMAND_ALIASES_KEY,
   normalizeCommandAliases,
@@ -441,42 +441,40 @@ export class InternalPluginAPI {
       return await pluginsAPI.market.deleteComment(commentId)
     })
 
+    // 旧通知入口仍先核验调用者，再返回本地版明确的失败结果。
     ipcMain.handle('internal:notification-summary', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:notification-summary')
       }
-      return await notificationsAPI.summary()
+      return unavailableOfficialCapability('官方通知摘要')
     })
 
-    ipcMain.handle(
-      'internal:notification-list',
-      async (event, beforeId?: number, limit?: number, unreadOnly?: boolean) => {
-        if (!requireInternalPlugin(this.pluginManager, event)) {
-          throw new PermissionDeniedError('internal:notification-list')
-        }
-        return await notificationsAPI.list(beforeId, limit, unreadOnly)
+    ipcMain.handle('internal:notification-list', async (event) => {
+      if (!requireInternalPlugin(this.pluginManager, event)) {
+        throw new PermissionDeniedError('internal:notification-list')
       }
-    )
+      return unavailableOfficialCapability('官方通知列表')
+    })
 
-    ipcMain.handle('internal:notification-mark-read', async (event, id: number) => {
+    ipcMain.handle('internal:notification-mark-read', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:notification-mark-read')
       }
-      return await notificationsAPI.markRead(id)
+      return unavailableOfficialCapability('官方通知已读')
     })
 
     ipcMain.handle('internal:notification-mark-all-read', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:notification-mark-all-read')
       }
-      return await notificationsAPI.markAllRead()
+      return unavailableOfficialCapability('官方通知全部已读')
     })
 
-    ipcMain.handle('internal:notification-archive', async (event, id: number) => {
+    ipcMain.handle('internal:notification-archive', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:notification-archive')
       }
-      return await notificationsAPI.archive(id)
+      return unavailableOfficialCapability('官方通知归档')
     })
 
     ipcMain.handle('internal:install-plugin-from-market', async (event, plugin: any) => {
@@ -638,12 +636,19 @@ export class InternalPluginAPI {
       }
     })
 
+    /**
+     * 向受信任的内置插件返回官方 AI 能力限制，保持原始失败结果。
+     * @param event 用于验证插件身份的 IPC 事件。
+     * @returns 官方能力不可用的失败结果。
+     * @throws 调用方不是内置插件时拒绝访问。
+     */
     ipcMain.handle('internal:ai-providers-get-official', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:ai-providers-get-official')
       }
       try {
-        return { success: true, data: await aiModelsAPI.getOfficialProvider() }
+        // 保留能力错误码，禁止将本地版失败结果再次包装成成功。
+        return await aiModelsAPI.getOfficialProvider()
       } catch (error: unknown) {
         return {
           success: false,
@@ -1264,26 +1269,46 @@ export class InternalPluginAPI {
     })
 
     // ==================== 应用更新 API ====================
+    // 保留发送方权限检查，仅将主动查询交给本地提醒层，不初始化原版更新客户端。
+    /**
+     * 为受信任的内置插件执行一次用户主动发起的上游稳定版检查。
+     * @param event 用于验证插件身份的 IPC 事件。
+     * @returns 兼容旧调用方的只读版本检查结果。
+     * @throws 调用方不是内置插件时拒绝访问。
+     */
     ipcMain.handle('internal:updater-check-update', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:updater-check-update')
       }
-      return await updaterAPI.checkUpdate()
+      return localUpdater.checkUpdate()
     })
 
-    ipcMain.handle('internal:updater-start-update', async (event) => {
+    /**
+     * 在校验内置插件权限后返回本地版不支持原版安装的明确结果。
+     * @param event 用于验证插件身份的 IPC 事件。
+     * @param sourceID 旧调用方提供的下载源编号。
+     * @returns 官方更新能力不可用的失败结果。
+     * @throws 调用方不是内置插件时拒绝访问。
+     */
+    ipcMain.handle('internal:updater-start-update', async (event, sourceID?: number) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:updater-start-update')
       }
-      return await updaterAPI.startUpdate()
+      return localUpdater.startUpdate(sourceID)
     })
 
+    /**
+     * 兼容受信任插件的旧自动检查设置，并明确返回实际关闭状态。
+     * @param event 用于验证插件身份的 IPC 事件。
+     * @param enabled 旧调用方请求的开关状态。
+     * @returns 请求已处理但 enabled 固定为 false 的结果。
+     * @throws 调用方不是内置插件时拒绝访问。
+     */
     ipcMain.handle('internal:updater-set-auto-check', async (event, enabled: boolean) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:updater-set-auto-check')
       }
-      updaterAPI.setAutoCheck(enabled)
-      return { success: true }
+      return localUpdater.setAutoCheck(enabled)
     })
 
     // ==================== 其他 API ====================

@@ -10,6 +10,8 @@ const { mockDbGet, mockSpawn, mockExecFile } = vi.hoisted(() => ({
 }))
 
 vi.mock('child_process', () => ({ spawn: mockSpawn, execFile: mockExecFile }))
+// 当前用例验证命令构造，不验证 Windows 原生进程执行。
+vi.mock('../../src/main/core/native', () => ({ CuiProcess: { exec: vi.fn() } }))
 vi.mock('../../src/main/api/shared/database', () => ({
   default: { dbGet: mockDbGet, dbPut: vi.fn() }
 }))

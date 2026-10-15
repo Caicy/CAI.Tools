@@ -5,12 +5,12 @@ import { EventEmitter } from 'events'
 import LmdbDatabase from '../lmdb'
 import {
   ensure3Layout,
-  hasLegacyLmdb,
   type AppDataPathOptions,
   type ZToolsDataLayout
 } from '../appData/appDataPaths'
 import { readDataVersion, writeDataVersion } from '../appData/appDataVersion'
 import { StorageRouter } from './storageRouter'
+import { unavailableOfficialCapability } from '../../../shared/localEdition'
 
 const DEFAULT_MAP_SIZE = 2 * 1024 * 1024 * 1024
 const DEFAULT_MAX_DBS = 6
@@ -37,22 +37,26 @@ export class StorageManager extends EventEmitter {
     super()
   }
 
+  /**
+   * 初始化设备与默认空间，忽略旧账号并禁止自动探测原版数据库。
+   * @returns 当前本地存储初始化状态。
+   */
   init(): StorageInitState {
     if (this.initState && this.deviceDb && this.accountDb && this.router) {
       return this.initState
     }
 
+    // 本地版全新开始只检查自身版本，不访问兼容目录或官方账号空间。
     const existingVersion = readDataVersion(this.options)
     const firstRun = !existingVersion
-    const legacyLmdbFound = firstRun && hasLegacyLmdb(this.options)
+    const legacyLmdbFound = false
     const layout = ensure3Layout(this.options)
-    const version =
-      existingVersion ||
-      (legacyLmdbFound ? null : writeDataVersion({ importedFromLegacy: false }, this.options))
+    const version = existingVersion || writeDataVersion({ importedFromLegacy: false }, this.options)
 
+    // 即使设备库残留 uid，也只打开 default，旧账号目录保持原样。
     this.deviceDb = this.openDb(layout.deviceLmdbPath)
-    this.currentAccountUid = this.loadPersistedAccountUid(this.deviceDb)
-    this.accountDb = this.openDb(this.accountPathForUid(this.currentAccountUid, layout))
+    this.currentAccountUid = null
+    this.accountDb = this.openDb(layout.defaultAccountLmdbPath)
     this.router = new StorageRouter(this)
     this.router.bindAccountDb(this.accountDb)
 
@@ -93,30 +97,19 @@ export class StorageManager extends EventEmitter {
     return this.currentAccountUid
   }
 
+  /**
+   * 保持默认本地数据空间，并明确拒绝切换官方账号。
+   * @param uid 请求的账号标识；空值表示默认本地空间。
+   * @returns 无返回值。
+   * @throws 非空账号请求时抛出官方能力不可用错误。
+   */
   switchAccount(uid?: string | null): void {
-    this.init()
-    const normalizedUid = uid?.trim() || null
-    if (normalizedUid === this.currentAccountUid) return
-
-    const nextPath = this.accountPathForUid(normalizedUid, this.getLayout())
-    const nextDb = this.openDb(nextPath)
-    const previousDb = this.accountDb
-
-    this.currentAccountUid = normalizedUid
-    this.accountDb = nextDb
-    this.router?.bindAccountDb(nextDb)
-
-    if (previousDb) {
-      try {
-        previousDb.close()
-      } catch (error) {
-        console.error('[Storage] close previous account db failed:', error)
-      }
+    // 在初始化前拒绝账号请求，确保失败操作不创建账号目录或修改状态。
+    if (uid?.trim()) {
+      const failure = unavailableOfficialCapability('账号切换')
+      throw Object.assign(new Error(failure.error), { code: failure.code })
     }
-
-    this.persistCurrentAccountUid(normalizedUid)
-
-    this.emit('account-switched', { uid: normalizedUid })
+    this.init()
   }
 
   /**
@@ -178,22 +171,6 @@ export class StorageManager extends EventEmitter {
 
   private accountPathForUid(uid: string | null, layout: ZToolsDataLayout): string {
     return uid ? path.join(layout.accountsRoot, hashAccountId(uid)) : layout.defaultAccountLmdbPath
-  }
-
-  private loadPersistedAccountUid(deviceDb: LmdbDatabase): string | null {
-    const doc = deviceDb.get('SYNC/current-account')
-    const uid = doc?.data?.uid
-    return typeof uid === 'string' && uid.trim() ? uid.trim() : null
-  }
-
-  private persistCurrentAccountUid(uid: string | null): void {
-    const deviceDb = this.getDeviceDb()
-    const existing = deviceDb.get('SYNC/current-account')
-    deviceDb.put({
-      _id: 'SYNC/current-account',
-      _rev: existing?._rev,
-      data: { uid }
-    })
   }
 }
 

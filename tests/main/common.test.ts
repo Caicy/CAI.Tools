@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+// 缩写逻辑不调用原生窗口能力；在模块边界隔离 Electron 专用二进制。
+vi.mock('../../src/main/core/native/index.js', () => ({ WindowManager: {} }))
 import { extractAcronym } from '../../src/main/utils/common'
 
 describe('extractAcronym', () => {

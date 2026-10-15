@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { pathToFileURL } from 'url'
 
@@ -30,8 +32,18 @@ import {
 } from '../../src/main/core/startupDataMigrations'
 
 describe('startupDataMigrations', () => {
+  let homeDir: string
   beforeEach(() => {
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cai-startup-migrations-'))
+    vi.stubEnv('ZTOOLS_DATA_ROOT', path.join(homeDir, '.cai-tools'))
+    vi.stubEnv('ZTOOLS_LEGACY_USER_DATA_PATH', path.join(homeDir, 'legacy'))
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+    fs.rmSync(homeDir, { recursive: true, force: true })
   })
 
   it('removes legacy web search command references from flat command lists', () => {
@@ -141,19 +153,18 @@ describe('startupDataMigrations', () => {
   })
 
   it('repairs migrated plugin, history, and avatar file URLs idempotently', () => {
-    const homeDir = path.join(path.sep, 'Users', 'tester')
     const legacyUserDataPath = path.join(homeDir, 'Library', 'Application Support', 'ZTools')
     const oldPluginLogo = pathToFileURL(
       path.join(legacyUserDataPath, 'plugins', 'demo', 'logo.png')
     ).href
     const currentPluginLogo = pathToFileURL(
-      path.join(homeDir, '.ztools', 'plugins', 'current', 'logo.png')
+      path.join(homeDir, '.cai-tools', 'plugins', 'current', 'logo.png')
     ).href
     const stores: Record<string, any> = {
       plugins: [
         {
           name: 'demo',
-          path: path.join(homeDir, '.ztools', 'plugins', 'demo'),
+          path: path.join(homeDir, '.cai-tools', 'plugins', 'demo'),
           logo: oldPluginLogo,
           features: [{ code: 'demo', icon: oldPluginLogo }]
         },
@@ -173,12 +184,12 @@ describe('startupDataMigrations', () => {
     migrateLegacyFileUrls({ homeDir, legacyUserDataPath })
 
     const migratedPluginLogo = pathToFileURL(
-      path.join(homeDir, '.ztools', 'plugins', 'demo', 'logo.png')
+      path.join(homeDir, '.cai-tools', 'plugins', 'demo', 'logo.png')
     ).href
     expect(mockDbPut).toHaveBeenCalledWith('plugins', [
       {
         name: 'demo',
-        path: path.join(homeDir, '.ztools', 'plugins', 'demo'),
+        path: path.join(homeDir, '.cai-tools', 'plugins', 'demo'),
         logo: migratedPluginLogo,
         features: [{ code: 'demo', icon: migratedPluginLogo }]
       },
@@ -188,7 +199,7 @@ describe('startupDataMigrations', () => {
       { name: 'Demo', type: 'plugin', icon: migratedPluginLogo }
     ])
     expect(mockDbPut).toHaveBeenCalledWith('settings-general', {
-      avatar: pathToFileURL(path.join(homeDir, '.ztools', 'avatar', 'avatar.png')).href,
+      avatar: pathToFileURL(path.join(homeDir, '.cai-tools', 'avatar', 'avatar.png')).href,
       homepage: 'https://example.com/image.png'
     })
 

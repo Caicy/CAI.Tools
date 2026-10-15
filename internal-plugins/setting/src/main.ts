@@ -3,18 +3,22 @@ import App from './App.vue'
 import './assets/styles'
 import { router } from './router'
 import { dispatchZtoolsCodeEvent, initZtoolsBaseEventHandler } from '@/events'
-import { refreshAccountProfile } from '@/composables'
 // 单独导入注册事件
 import './events/allCodeEvent'
 
-// 统一对 ztools onPluginEnter 事件进行派发, 内部不要再对 ztools.onPluginEnter 进行监听
-ztools.onPluginEnter((action) => {
-  // 将 utools 事件派发根据不同的 code 进行派发出去
+/**
+ * 将设置插件进入事件分派到本机功能路由。
+ * @param action 宿主传入的插件进入参数。
+ * @returns 无返回值。
+ */
+function handlePluginEnter(action: Parameters<typeof dispatchZtoolsCodeEvent>[0]): void {
+  // 按功能 code 分派本机行为，缓存视图重新进入时仍使用相同路由入口。
   console.log('[插件事件: onPluginEnter]', action)
   dispatchZtoolsCodeEvent(action, router)
-  // 设置视图会被宿主缓存复用，每次重新进入都要从服务端刷新账号资料。
-  void refreshAccountProfile({ force: true })
-})
+}
+
+// 设置插件仅注册一次进入监听，内部通过统一事件分派。
+ztools.onPluginEnter(handlePluginEnter)
 
 ztools.onPluginOut(() => {
   if (router.currentRoute.value.name === 'GeneralSetting') {

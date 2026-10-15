@@ -15,6 +15,8 @@ interface DetachedWindowLayoutSnapshot {
   windowHeight: number
   minimumHeight: number
   pluginBounds: Electron.Rectangle | null
+  pluginViewportHeight: number
+  pluginWidthMatchesViewport: boolean
 }
 
 /**
@@ -101,22 +103,33 @@ async function readMainWindowLayout(
 /**
  * 读取当前分离窗口及其插件 WebContentsView 的布局快照。
  * @param electronApp 当前隔离 Electron 应用实例。
- * @returns 分离窗口高度和插件视图边界；窗口尚未创建时返回 null。
+ * @returns 分离窗口应用尺寸、插件真实可视高度和边界；窗口尚未创建时返回 null。
  */
 async function readDetachedWindowLayout(
   electronApp: ElectronApplication
 ): Promise<DetachedWindowLayoutSnapshot | null> {
-  return await electronApp.evaluate(({ BrowserWindow }) => {
+  return await electronApp.evaluate(async ({ BrowserWindow }) => {
     const detachedWindow = BrowserWindow.getAllWindows().find((window) =>
       window.webContents.getURL().includes('detached-titlebar.html')
     )
     if (!detachedWindow) return null
 
     const pluginView = detachedWindow.contentView.children[0]
+    if (!pluginView) return null
+    const viewport = await (pluginView as Electron.WebContentsView).webContents.executeJavaScript(
+      '({ height: innerHeight, width: innerWidth })'
+    )
+    const pluginBounds = pluginView.getBounds()
     return {
-      windowHeight: detachedWindow.getContentBounds().height,
+      // Windows 高 DPI 无边框窗口的 getContentBounds 会额外报告边缘像素；setContentSize 后外框才对应请求的逻辑总高。
+      windowHeight:
+        process.platform === 'win32'
+          ? detachedWindow.getBounds().height
+          : detachedWindow.getContentBounds().height,
       minimumHeight: detachedWindow.getMinimumSize()[1],
-      pluginBounds: pluginView?.getBounds() || null
+      pluginBounds,
+      pluginViewportHeight: viewport.height,
+      pluginWidthMatchesViewport: viewport.width === pluginBounds.width
     }
   })
 }
@@ -308,6 +321,10 @@ test('紧凑顶部栏同时作用于搜索页和插件页并可持久化', async
     const compactDetachedLayout = await readDetachedWindowLayout(electronApp)
     expect(compactDetachedLayout?.minimumHeight).toBe(40)
     expect(compactDetachedLayout?.pluginBounds?.y).toBe(40)
+    expect(compactDetachedLayout?.pluginViewportHeight).toBe(
+      compactDetachedLayout?.pluginBounds?.height
+    )
+    expect(compactDetachedLayout?.pluginWidthMatchesViewport).toBe(true)
 
     const detachedHeaderScreenshot = await detachedPage!.screenshot({
       path: detachedHeaderScreenshotPath,
@@ -328,12 +345,16 @@ test('紧凑顶部栏同时作用于搜索页和插件页并可持久化', async
     await expect(detachedTitlebar).toHaveCSS('height', '52px')
     await expect
       .poll(() => readDetachedWindowLayout(electronApp!))
-      .toEqual({
-        windowHeight: compactDetachedLayout!.windowHeight + 12,
+      .toMatchObject({
+        windowHeight: compactDetachedLayout!.pluginViewportHeight + 52,
         minimumHeight: 52,
+        pluginViewportHeight: compactDetachedLayout!.pluginViewportHeight,
+        pluginWidthMatchesViewport: true,
         pluginBounds: {
-          ...compactDetachedLayout!.pluginBounds!,
-          y: 52
+          x: 0,
+          y: 52,
+          width: compactDetachedLayout!.pluginBounds!.width,
+          height: compactDetachedLayout!.pluginViewportHeight
         }
       })
     expect(
@@ -343,7 +364,20 @@ test('紧凑顶部栏同时作用于搜索页和插件页并可持久化', async
       )
     ).toMatchObject({ success: true })
     await expect(detachedTitlebar).toHaveCSS('height', '40px')
-    await expect.poll(() => readDetachedWindowLayout(electronApp!)).toEqual(compactDetachedLayout)
+    await expect
+      .poll(() => readDetachedWindowLayout(electronApp!))
+      .toMatchObject({
+        windowHeight: compactDetachedLayout!.pluginViewportHeight + 40,
+        minimumHeight: 40,
+        pluginViewportHeight: compactDetachedLayout!.pluginViewportHeight,
+        pluginWidthMatchesViewport: true,
+        pluginBounds: {
+          x: 0,
+          y: 40,
+          width: compactDetachedLayout!.pluginBounds!.width,
+          height: compactDetachedLayout!.pluginViewportHeight
+        }
+      })
 
     // 使用同一隔离数据目录重启，验证创建窗口时直接恢复紧凑高度。
     await electronApp.close()

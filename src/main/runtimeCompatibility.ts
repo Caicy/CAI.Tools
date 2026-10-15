@@ -1,7 +1,6 @@
-import { GITHUB_LATEST_RELEASE_URL } from '@shared/updateSource'
-
 export const EXPECTED_ELECTRON_VERSION = __ZTOOLS_TARGET_ELECTRON_VERSION__
-export const FULL_INSTALL_RELEASE_URL = GITHUB_LATEST_RELEASE_URL
+export const LOCAL_RUNTIME_REBUILD_INSTRUCTIONS =
+  '请从 CAI.Tools 本地版源码重新安装依赖并构建，以使用当前版本要求的 Electron 运行环境。'
 
 export interface RuntimeCompatibilityInput {
   platform: NodeJS.Platform
@@ -16,6 +15,11 @@ export interface RuntimeCompatibilityResult {
   reason?: string
 }
 
+/**
+ * 检查发行运行环境是否匹配构建时要求，保留原有平台与开发模式边界。
+ * @param input 平台、运行模式及实际和预期 Electron 版本。
+ * @returns 是否兼容以及阻止启动的原因。
+ */
 export function checkRuntimeCompatibility({
   platform,
   isPackaged,

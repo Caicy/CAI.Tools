@@ -1,4 +1,3 @@
-import { httpGet } from '../../utils/httpRequest.js'
 import databaseAPI from '../shared/database'
 import type { PluginReleaseHistoryResult } from '../../../shared/pluginReleaseHistory'
 import {
@@ -209,11 +208,8 @@ export class PluginMarketAPI {
   private latestPluginRequests = new Map<string, Promise<PluginMarketLatestResult>>()
 
   /**
-   * 获取插件市场列表。
-   * 缓存策略：
-   * 1. 优先请求线上聚合 API
-   * 2. 网络失败时降级使用本地缓存
-   * @returns 插件列表和可选的 storefront 视图数据
+   * 通过统一匿名请求获取市场目录、推荐和排行榜，网络失败或超时后使用本地缓存。
+   * @returns 插件列表及可选的 storefront 视图数据；没有可用缓存时返回失败结果。
    */
   public async fetchPluginMarket(): Promise<PluginMarketResult> {
     const getCachedResult = (): PluginMarketResult | null => {
@@ -248,9 +244,10 @@ export class PluginMarketAPI {
 
       console.log('[Plugins] 从 ZTools 插件市场获取列表...', marketApiBase)
 
+      // 全部首页请求共用匿名与超时边界，任一辅助列表失败仍保留目录结果。
       const [marketResponse, recommendations, popularRanking, recentRanking] = await Promise.all([
-        httpGet(
-          `${marketApiBase}/plugins?limit=${PLUGIN_MARKET_RECOMMEND_LIMIT}&platform=${encodeURIComponent(platform)}&t=${timestamp}`
+        requestPluginMarket(
+          `/plugins?limit=${PLUGIN_MARKET_RECOMMEND_LIMIT}&platform=${encodeURIComponent(platform)}&t=${timestamp}`
         ),
         this.fetchPluginMarketRecommendations(PLUGIN_MARKET_RECOMMEND_LIMIT).catch((error) => {
           console.warn('[Plugins] 获取推荐插件失败，将仅使用市场聚合数据:', error)
@@ -395,14 +392,20 @@ export class PluginMarketAPI {
     return data as PluginReleaseHistoryResult
   }
 
+  /**
+   * 匿名获取推荐插件，并过滤不含名称的无效条目。
+   * @param limit 期望获取的推荐数量。
+   * @returns 推荐插件列表，保留服务端条目形状。
+   * @throws 请求失败、超时或响应 JSON 无效时抛出错误。
+   */
   public async fetchPluginMarketRecommendations(
     limit = PLUGIN_MARKET_RECOMMEND_LIMIT
   ): Promise<PluginMarketPlugin[]> {
-    const marketApiBase = getPluginMarketApiBase()
     const timestamp = Date.now()
     const platform = process.platform
-    const response = await httpGet(
-      `${marketApiBase}/plugins/recommendations?limit=${limit}&platform=${encodeURIComponent(platform)}&t=${timestamp}`
+    // 单独刷新推荐也必须沿用匿名身份和最长等待时间。
+    const response = await requestPluginMarket(
+      `/plugins/recommendations?limit=${limit}&platform=${encodeURIComponent(platform)}&t=${timestamp}`
     )
     const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
     const items = Array.isArray(data?.items) ? data.items : []
@@ -410,11 +413,11 @@ export class PluginMarketAPI {
   }
 
   /**
-   * 获取指定类型的插件排行榜，并校验服务端响应与请求类型一致。
+   * 匿名获取指定类型的排行榜，并校验服务端响应与请求类型一致。
    * @param type 排行榜类型。
    * @param platform 目标运行平台。
    * @returns 排行榜中的有效插件列表，最多五十项。
-   * @throws 当请求失败或响应类型无效时抛出错误。
+   * @throws 当请求失败、超时或响应类型无效时抛出错误。
    */
   private async fetchPluginMarketRanking(
     type: PluginMarketRankingType,
@@ -425,9 +428,8 @@ export class PluginMarketAPI {
       platform,
       t: String(Date.now())
     })
-    const response = await httpGet(
-      `${getPluginMarketApiBase()}/plugins/rankings?${query.toString()}`
-    )
+    // 排行榜沿用统一请求边界，避免辅助栏目拖住整个市场刷新。
+    const response = await requestPluginMarket(`/plugins/rankings?${query.toString()}`)
     const data = (
       typeof response.data === 'string' ? JSON.parse(response.data) : response.data
     ) as PluginMarketRankingResponse

@@ -5,8 +5,6 @@ import type { PluginManager } from '../managers/pluginManager'
 import clipboardAPI from './shared/clipboard'
 import databaseAPI from './shared/database'
 
-import updaterAPI from './updater'
-
 // 主程序渲染进程专用API
 import aiModelsAPI from './renderer/aiModels'
 import appsAPI from './renderer/commands'
@@ -14,7 +12,8 @@ import localShortcutsAPI from './renderer/localShortcuts'
 import pluginsAPI from './renderer/plugins'
 import settingsAPI from './renderer/settings'
 import storageAPI from './renderer/storage'
-import syncAPI from './renderer/sync'
+import { registerLocalCapabilities } from './renderer/localCapabilities'
+import localUpdater from './localUpdater'
 import systemAPI from './renderer/system'
 import { systemSettingsAPI } from './renderer/systemSettings'
 import windowAPI from './renderer/window'
@@ -39,8 +38,7 @@ import pluginShellAPI from './plugin/shell'
 import pluginToastAPI from './plugin/toast'
 import pluginToolsAPI from './plugin/tools'
 import pluginUIAPI from './plugin/ui'
-import pluginUserAPI from './plugin/user'
-import pluginPaymentAPI from './plugin/payment'
+import { registerLocalUserCapabilities } from './plugin/localUserCapabilities'
 import pluginWindowAPI from './plugin/window'
 import { setupImageAnalysisAPI } from './shared/imageAnalysis'
 import {
@@ -94,7 +92,10 @@ class APIManager {
   private pluginManager: PluginManager | null = null
 
   /**
-   * 初始化所有API模块
+   * 初始化本地 API 与官方能力兼容响应，保留本机服务的原有配置开关。
+   * @param mainWindow 主窗口实例。
+   * @param pluginManager 插件运行时管理器。
+   * @returns 无返回值。
    */
   public init(mainWindow: BrowserWindow, pluginManager: PluginManager): void {
     this.pluginManager = pluginManager
@@ -117,7 +118,10 @@ class APIManager {
     storageAPI.init()
     systemAPI.init(mainWindow)
     systemSettingsAPI.init()
-    syncAPI.init(mainWindow, pluginManager)
+    // 仅注册旧账号/同步入口的明确失败响应，不创建同步客户端。
+    registerLocalCapabilities()
+    // 仅注册用户主动查询上游版本的入口，不恢复原版自动更新器。
+    localUpdater.init(mainWindow)
     localShortcutsAPI.init(mainWindow)
     localShortcutsAPI.setCommandsCacheInvalidator(() => appsAPI.invalidateCommandsCache(false))
 
@@ -135,8 +139,7 @@ class APIManager {
     pluginAiAPI.init(mainWindow, pluginManager)
     pluginLifecycleAPI.init(mainWindow, pluginManager)
     pluginUIAPI.init(mainWindow, pluginManager)
-    pluginUserAPI.init(pluginManager)
-    pluginPaymentAPI.init(mainWindow, pluginManager)
+    registerLocalUserCapabilities()
     // 注入主题信息变更钩子：当主题色/材质变更时通知所有插件视图
     windowManager.setOnThemeInfoChanged(() => {
       pluginUIAPI.broadcastThemeInfoToAllPlugins()
@@ -162,9 +165,6 @@ class APIManager {
 
     // 初始化内置插件专用API
     internalPluginAPI.init(mainWindow, pluginManager)
-
-    // 初始化软件更新API
-    updaterAPI.init(mainWindow)
 
     // 初始化 HTTP 服务，并复用应用内插件启动入口处理外部插件启动请求。
     httpServer.setPluginLauncher((options) => this.launchPlugin(options))

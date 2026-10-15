@@ -1,12 +1,14 @@
-import { app, dialog, shell } from 'electron'
+import { app, dialog } from 'electron'
 import './core/appData/configureAppDataRoot'
+import { LOCAL_APP_ID, LOCAL_PRODUCT_NAME } from '../shared/localEdition'
 import {
   checkRuntimeCompatibility,
   EXPECTED_ELECTRON_VERSION,
-  FULL_INSTALL_RELEASE_URL
+  LOCAL_RUNTIME_REBUILD_INSTRUCTIONS
 } from './runtimeCompatibility'
 
-if (process.platform === 'win32') app.setAppUserModelId('top.z-tools')
+app.setName(LOCAL_PRODUCT_NAME)
+if (process.platform === 'win32') app.setAppUserModelId(LOCAL_APP_ID)
 
 const gotTheLock = app.requestSingleInstanceLock()
 const runtimeCompatibility = checkRuntimeCompatibility({
@@ -15,25 +17,28 @@ const runtimeCompatibility = checkRuntimeCompatibility({
   runtimeElectronVersion: process.versions.electron
 })
 
+/**
+ * 解释本地版运行环境不兼容的处理方式，并在用户关闭提示后结束启动。
+ * @returns 提示关闭并结束应用后的 Promise。
+ */
 async function showBlockingRuntimePrompt(): Promise<void> {
   try {
+    // 阻止加载业务入口，直到用户使用与本地源码匹配的 Electron 环境重建。
     await app.whenReady()
-    const result = await dialog.showMessageBox({
+    await dialog.showMessageBox({
       type: 'warning',
-      title: '需要更新 ZTools',
-      message: '当前版本需要升级后才能继续使用',
-      detail:
-        'ZTools 的基础组件已经升级，当前版本无法直接完成更新。请安装最新完整版本，您的数据、设置和插件都会保留。',
-      buttons: ['下载最新版本', '退出应用'],
+      title: '需要重新构建 CAI.Tools',
+      message: '当前运行环境与本地版要求不兼容',
+      detail: LOCAL_RUNTIME_REBUILD_INSTRUCTIONS,
+      buttons: ['退出应用'],
       defaultId: 0,
-      cancelId: 1,
+      cancelId: 0,
       noLink: true
     })
-
-    if (result.response === 0) await shell.openExternal(FULL_INSTALL_RELEASE_URL)
   } catch (error) {
     console.error('[Bootstrap] 显示 Electron 兼容性提示失败:', error)
   } finally {
+    // 兼容检查失败时不继续初始化数据库、插件或后台服务。
     app.exit(0)
   }
 }

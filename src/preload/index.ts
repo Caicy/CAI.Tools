@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { SearchWallpaperConfig } from '@shared/searchWallpaper'
 import type { AiRequestStatusChange } from '@shared/aiRequestStatus'
+import type { LocalEditionInfo, UpstreamNotice } from '@shared/localEdition'
 
 export interface Command {
   name: string
@@ -40,6 +41,27 @@ export interface PluginMarketDownloadProgress {
 }
 
 const api = {
+  /**
+   * 读取本地版标识和官方能力开关。
+   * @returns 本地版能力信息的 Promise。
+   */
+  getLocalEditionInfo: (): Promise<LocalEditionInfo> =>
+    ipcRenderer.invoke('local-edition:get-info'),
+  /**
+   * 按用户请求检查上游稳定版发布信息。
+   * @returns 上游版本提醒的 Promise。
+   */
+  checkUpstreamUpdate: (): Promise<UpstreamNotice> =>
+    ipcRenderer.invoke('local-edition:check-upstream'),
+  /**
+   * 通过主进程校验后打开上游发布页。
+   * @param url 待校验的上游发布页地址。
+   * @returns 包含成功状态或错误信息的 Promise。
+   */
+  openUpstreamRelease: (
+    url: string
+  ): Promise<{ success: boolean; code?: string; error?: string }> =>
+    ipcRenderer.invoke('local-edition:open-upstream-release', url),
   getApps: () => ipcRenderer.invoke('get-apps'),
   getSystemSettings: () => ipcRenderer.invoke('get-system-settings'),
   isWindows: () => ipcRenderer.invoke('is-windows'),
@@ -593,6 +615,11 @@ declare global {
       }
     }
     ztools: {
+      getLocalEditionInfo: () => Promise<LocalEditionInfo>
+      checkUpstreamUpdate: () => Promise<UpstreamNotice>
+      openUpstreamRelease: (
+        url: string
+      ) => Promise<{ success: boolean; code?: string; error?: string }>
       getApps: () => Promise<Command[]>
       getSystemSettings: () => Promise<any[]>
       isWindows: () => Promise<boolean>

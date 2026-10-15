@@ -4,20 +4,15 @@ import log from 'electron-log'
 import path from 'path'
 import lmdbInstance from './core/lmdb/lmdbInstance'
 import api from './api/index'
-import updaterAPI from './api/updater'
+import localUpdater from './api/localUpdater'
 import appsAPI from './api/renderer/commands'
 import pluginsAPI from './api/renderer/plugins'
 import appWatcher from './appWatcher'
-import activityHeartbeatService from './core/activity/heartbeatService'
 import {
   ensureMacAccessibilityPermission,
   focusAccessibilityPermissionWindow,
   isAccessibilityPermissionWindowActive
 } from './core/accessibilityPermissionGate'
-import {
-  handleFirstRunStorageImport,
-  isLegacyImportWindowActive
-} from './core/firstRunStorageImport'
 import floatingBallManager from './core/floatingBallManager'
 import httpServer from './core/httpServer'
 import mcpServer from './core/mcpServer'
@@ -133,9 +128,6 @@ app.whenReady().then(async () => {
   // macOS 辅助功能权限检查和请求（如果未授权则弹窗提示）
   await ensureMacAccessibilityPermission()
 
-  // 处理首次运行时的旧数据导入（如果存在旧数据）
-  await handleFirstRunStorageImport()
-
   // 注册自定义图标协议到默认 session (ztools-icon://)
   registerIconProtocolForSession(session.defaultSession)
 
@@ -159,7 +151,6 @@ app.whenReady().then(async () => {
       appsAPI.setAfterFirstAppsReadyCallback(() => {
         appWatcher.init(mainWindow)
       })
-      activityHeartbeatService.start()
     }
   }
 
@@ -213,7 +204,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  if (isLegacyImportWindowActive() || isAccessibilityPermissionWindowActive()) return
+  if (isAccessibilityPermissionWindowActive()) return
 
   if (!platform.isMacOS) {
     app.quit()
@@ -223,7 +214,8 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   windowManager.unregisterAllShortcuts()
   api.cleanup()
-  updaterAPI.cleanup()
+  // 本地提醒层保留清理合同，不持有原版更新器或安装资源。
+  localUpdater.cleanup()
   // 停止应用目录监听
   appWatcher.stop()
   // 清理悬浮球
@@ -232,8 +224,6 @@ app.on('will-quit', () => {
   httpServer.stop()
   // 关闭 MCP 服务器
   mcpServer.stop()
-  // 停止活动心跳
-  activityHeartbeatService.stop()
 })
 
 app.on('before-quit', (event) => {

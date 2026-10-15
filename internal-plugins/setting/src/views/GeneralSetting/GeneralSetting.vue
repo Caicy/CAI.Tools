@@ -313,9 +313,6 @@ const searchWallpaperFileName = computed(() => {
 // 颜色选择器引用
 const colorPickerInput = ref<HTMLInputElement | null>(null)
 
-// 自动检查更新（保留用于设置持久化）
-const autoCheckUpdate = ref(true)
-
 // 主题色选项
 const themeColors = [
   { label: '翡翠绿', value: 'green', hex: '#059669' },
@@ -1371,7 +1368,6 @@ async function loadSettings(): Promise<void> {
       theme.value = data.theme ?? 'system'
       primaryColor.value = data.primaryColor ?? 'green'
       searchMode.value = data.searchMode ?? 'aggregate'
-      autoCheckUpdate.value = data.autoCheckUpdate ?? true
       tabKeyFunction.value =
         data.tabKeyFunction ?? (data.tabTargetCommand ? 'target-command' : 'navigate')
       // Tab 键目标指令
@@ -1494,7 +1490,6 @@ async function saveSettings(): Promise<void> {
       customInternalApiPluginNames: [...customInternalApiPluginNames.value],
       proxyEnabled: proxyEnabled.value,
       proxyUrl: proxyUrl.value,
-      autoCheckUpdate: autoCheckUpdate.value,
       clipboardRetentionDays: clipboardRetentionDays.value,
       terminal: terminal.value,
       terminalCustomCommand: terminalCustomCommand.value

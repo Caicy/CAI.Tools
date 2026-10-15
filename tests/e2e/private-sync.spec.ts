@@ -9,6 +9,12 @@ import { WebSocketServer } from 'ws'
 const projectRoot = path.resolve(__dirname, '../..')
 const privateServerUrl = 'http://127.0.0.1:23618'
 
+// 保留上游私有同步回归用例供将来对照；本地版移除了账号与同步，等价边界由 local-edition.spec.ts 验证。
+test.skip(
+  true,
+  'CAI.Tools 本地版不提供账号登录或私有同步；参见 local-edition.spec.ts 和 localCapabilities.test.ts'
+)
+
 test('可以切换私有部署、登录并开启同步', async ({ browserName: _browserName }, testInfo) => {
   const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ztools-private-sync-playwright-'))
   const legacyRoot = path.join(dataRoot, 'legacy')

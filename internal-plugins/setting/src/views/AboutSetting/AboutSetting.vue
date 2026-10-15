@@ -1,218 +1,129 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useToast } from '@/components'
-import { GITHUB_LATEST_RELEASE_URL, GITHUB_REPOSITORY_URL } from '@shared/updateSource'
+import { GITHUB_REPOSITORY_URL } from '@shared/updateSource'
+import type { LocalEditionInfo, UpstreamNotice } from '@shared/localEdition'
 
-const { info, error, confirm } = useToast()
-
+const { error } = useToast()
 const appVersion = ref('')
+const localEdition = ref<LocalEditionInfo | null>(null)
 const isCheckingUpdate = ref(false)
-const autoCheckUpdate = ref(true)
-const receiveBetaUpdates = ref(false)
-const showUpdateOptions = ref(false)
+const isOpeningRelease = ref(false)
+const upstreamNotice = ref<UpstreamNotice | null>(null)
 const currentYear = new Date().getFullYear()
-const showBetaUpdateOption = computed(
-  () => appVersion.value !== '' && appVersion.value !== '未知' && !appVersion.value.includes('-')
-)
-
-onMounted(async () => {
-  await getAppVersion()
-  await loadAutoCheckSetting()
-  window.addEventListener('click', closeUpdateOptions)
-  window.addEventListener('keydown', handleUpdateOptionsKeydown, true)
+const noticeText = computed(() => {
+  const notice = upstreamNotice.value
+  if (!notice) return '点击检查上游版本，查看 ZTools 稳定版发布信息。'
+  if (notice.kind === 'available')
+    return `上游有新版本 v${notice.version}，需合并源码并重新构建 CAI.Tools。`
+  if (notice.kind === 'up-to-date')
+    return `上游基线已是最新稳定版（v${notice.version || localEdition.value?.upstreamBase || '未知'}）。`
+  return notice.message || '暂时无法检查上游版本，请稍后重试。'
 })
 
-onUnmounted(() => {
-  window.removeEventListener('click', closeUpdateOptions)
-  window.removeEventListener('keydown', handleUpdateOptionsKeydown, true)
-})
-
-async function getAppVersion(): Promise<void> {
+/**
+ * 读取本机构建版本和能力信息，挂载时只访问本地状态。
+ * @returns 本机信息读取完成后结束的 Promise。
+ */
+async function loadLocalEdition(): Promise<void> {
   try {
-    appVersion.value = await window.ztools.internal.getAppVersion()
-  } catch (err) {
-    console.error('获取版本失败:', err)
+    // 此处只读取本机信息；上游检查必须由用户点击发起。
+    const [version, info] = await Promise.all([
+      window.ztools.internal.getAppVersion(),
+      window.ztools.internal.getLocalEditionInfo()
+    ])
+    appVersion.value = version
+    localEdition.value = info
+  } catch (cause) {
+    console.error('读取本地版本信息失败:', cause)
     appVersion.value = '未知'
+    error('读取本地版本信息失败')
   }
 }
 
+/**
+ * 按用户操作获取上游稳定版本提醒。
+ * @returns 检查完成后结束的 Promise。
+ */
 async function handleCheckUpdate(): Promise<void> {
   if (isCheckingUpdate.value) return
+  // 清除旧提醒，防止检查失败后继续展示过期发布页。
   isCheckingUpdate.value = true
-
+  upstreamNotice.value = null
   try {
-    const result = await window.ztools.internal.updaterCheckUpdate()
-    if (result.migrationRequired) {
-      const shouldOpenRelease = await confirm({
-        title: '需要更新 ZTools',
-        message:
-          '当前版本使用的是较早的更新方式，请安装一次最新完整版本。您的数据、设置和插件都会保留。',
-        type: 'info',
-        confirmText: '下载最新版本',
-        cancelText: '稍后'
-      })
-      if (shouldOpenRelease) {
-        window.ztools.shellOpenExternal(result.releaseUrl || GITHUB_LATEST_RELEASE_URL)
-      }
-      return
-    }
-    if (!result.hasUpdate) {
-      if (result.error) {
-        error('检查更新出错: ' + result.error)
-      } else {
-        info('当前已是最新版本')
-      }
-    }
-  } catch (err: any) {
-    console.error('检查更新失败:', err)
-    error('检查更新失败: ' + (err.message || '未知错误'))
+    upstreamNotice.value = await window.ztools.internal.checkUpstreamUpdate()
+  } catch (cause) {
+    console.error('检查上游版本失败:', cause)
+    upstreamNotice.value = { kind: 'unavailable', message: '暂时无法检查上游版本，请稍后重试。' }
   } finally {
     isCheckingUpdate.value = false
   }
 }
 
+/**
+ * 请求主进程再次校验提醒中的地址后打开上游发布页。
+ * @returns 发布页打开请求完成后结束的 Promise。
+ */
+async function openUpstreamRelease(): Promise<void> {
+  const notice = upstreamNotice.value
+  if (isOpeningRelease.value || notice?.kind !== 'available' || !notice.releaseUrl) return
+  isOpeningRelease.value = true
+  try {
+    // 远端发布地址必须经专用 IPC 白名单校验，不能直接交给通用外链接口。
+    const result = await window.ztools.internal.openUpstreamRelease(notice.releaseUrl)
+    if (!result.success) error(result.error || '无法打开上游发布页')
+  } catch (cause) {
+    console.error('打开上游发布页失败:', cause)
+    error('无法打开上游发布页')
+  } finally {
+    isOpeningRelease.value = false
+  }
+}
+
+/**
+ * 打开上游项目的交流群页面。
+ * @returns 无返回值。
+ */
 function openQQGroup(): void {
   window.ztools.shellOpenExternal('https://qm.qq.com/q/fXCzbh3Txe')
 }
 
+/**
+ * 打开上游项目的源代码仓库。
+ * @returns 无返回值。
+ */
 function openGithub(): void {
   window.ztools.shellOpenExternal(GITHUB_REPOSITORY_URL)
 }
 
+/**
+ * 打开上游作者的赞助页面。
+ * @returns 无返回值。
+ */
 function openSponsor(): void {
   window.ztools.shellOpenExternal('https://afdian.com/a/ZTools')
 }
 
-async function loadAutoCheckSetting(): Promise<void> {
-  try {
-    const data = await window.ztools.internal.dbGet('settings-general')
-    if (data) {
-      autoCheckUpdate.value = data.autoCheckUpdate ?? true
-      receiveBetaUpdates.value = data.receiveBetaUpdates === true
-    }
-  } catch (err) {
-    console.error('加载自动更新设置失败:', err)
-  }
-}
-
-async function handleAutoCheckUpdateChange(): Promise<void> {
-  try {
-    // 更新数据库中的设置
-    const data = (await window.ztools.internal.dbGet('settings-general')) || {}
-    data.autoCheckUpdate = autoCheckUpdate.value
-    await window.ztools.internal.dbPut('settings-general', data)
-    // 通知主进程
-    await window.ztools.internal.updaterSetAutoCheck(autoCheckUpdate.value)
-  } catch (err) {
-    console.error('更新自动检查更新设置失败:', err)
-  }
-}
-
-/**
- * 打开或关闭更新高级选项菜单，并阻止当前点击触发外部关闭监听。
- * @param event 三点按钮的点击事件。
- * @returns 无返回值。
- */
-function toggleUpdateOptions(event: MouseEvent): void {
-  event.stopPropagation()
-  showUpdateOptions.value = !showUpdateOptions.value
-}
-
-/**
- * 关闭更新高级选项菜单。
- * @returns 无返回值。
- */
-function closeUpdateOptions(): void {
-  showUpdateOptions.value = false
-}
-
-/**
- * 在更新高级选项打开时响应 Esc 键关闭菜单。
- * @param event 窗口键盘事件。
- * @returns 无返回值。
- */
-function handleUpdateOptionsKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape' || !showUpdateOptions.value) return
-  event.stopPropagation()
-  closeUpdateOptions()
-}
-
-/**
- * 保存 Beta 更新订阅偏好，并在开启时立即检查一次新版本。
- * @returns 设置保存和可选更新检查完成后的 Promise。
- */
-async function handleReceiveBetaUpdatesChange(): Promise<void> {
-  try {
-    // 与自动检查更新共用设备级设置，确保自动和手动检查读取同一状态。
-    const data = (await window.ztools.internal.dbGet('settings-general')) || {}
-    data.receiveBetaUpdates = receiveBetaUpdates.value
-    await window.ztools.internal.dbPut('settings-general', data)
-
-    // 开启订阅后立即检查，避免用户等待下一次定时检查。
-    if (receiveBetaUpdates.value && autoCheckUpdate.value) {
-      await window.ztools.internal.updaterCheckUpdate()
-    }
-  } catch (err) {
-    console.error('更新 Beta 版本订阅设置失败:', err)
-    error('Beta 更新设置保存失败')
-  }
-}
+onMounted(loadLocalEdition)
 </script>
 <template>
   <div class="content-panel">
-    <!-- 右上角自动检查更新 -->
-    <div class="auto-update-row">
-      <label class="auto-update-label" for="auto-check-update">自动检查更新</label>
-      <label class="toggle">
-        <input
-          id="auto-check-update"
-          v-model="autoCheckUpdate"
-          type="checkbox"
-          @change="handleAutoCheckUpdateChange"
-        />
-        <span class="toggle-slider"></span>
-      </label>
-      <div v-if="showBetaUpdateOption" class="update-options-wrapper" @click.stop>
-        <button
-          class="icon-btn update-options-button"
-          type="button"
-          title="更新选项"
-          aria-label="更新选项"
-          :aria-expanded="showUpdateOptions"
-          @click="toggleUpdateOptions"
-        >
-          <div class="i-z-more" />
-        </button>
-        <Transition name="update-options">
-          <div v-if="showUpdateOptions" class="update-options-menu">
-            <div class="update-options-copy">
-              <span>接收 Beta 版本更新</span>
-              <small>开启后，正式版也会接收测试版本</small>
-            </div>
-            <label class="toggle beta-update-toggle">
-              <input
-                v-model="receiveBetaUpdates"
-                type="checkbox"
-                @change="handleReceiveBetaUpdatesChange"
-              />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </Transition>
-      </div>
-    </div>
-
     <div class="about-container">
       <!-- Logo -->
       <div class="about-logo">
-        <img src="/logo.png" alt="ZTools" draggable="false" />
+        <img src="/logo.png" alt="CAI.Tools" draggable="false" />
       </div>
 
       <!-- 应用名称 -->
-      <h1 class="about-title">ZTools</h1>
+      <h1 class="about-title">CAI.Tools</h1>
 
       <!-- 版本号 -->
-      <div class="about-version">v{{ appVersion }}</div>
+      <div class="about-version">
+        本地版本 v{{ appVersion || '读取中' }} · 上游基线 ZTools v{{
+          localEdition?.upstreamBase || '读取中'
+        }}
+      </div>
+      <p class="local-edition-description">本地工作台 · 自配 AI 供应商 · 本机数据</p>
 
       <!-- 信息卡片 -->
       <div class="about-cards">
@@ -237,7 +148,7 @@ async function handleReceiveBetaUpdatesChange(): Promise<void> {
               />
             </svg>
           </div>
-          <div class="card-label">作者</div>
+          <div class="card-label">上游作者</div>
           <div class="card-value">Zing</div>
         </div>
 
@@ -253,7 +164,7 @@ async function handleReceiveBetaUpdatesChange(): Promise<void> {
               />
             </svg>
           </div>
-          <div class="card-label">QQ 交流群</div>
+          <div class="card-label">上游交流群</div>
           <div class="card-value">
             1076942619
             <svg class="external-icon" width="12" height="12" viewBox="0 0 24 24" fill="none">
@@ -294,7 +205,7 @@ async function handleReceiveBetaUpdatesChange(): Promise<void> {
               />
             </svg>
           </div>
-          <div class="card-label">开源地址</div>
+          <div class="card-label">上游源码</div>
           <div class="card-value">
             查看代码
             <svg class="external-icon" width="12" height="12" viewBox="0 0 24 24" fill="none">
@@ -335,7 +246,7 @@ async function handleReceiveBetaUpdatesChange(): Promise<void> {
               />
             </svg>
           </div>
-          <div class="card-label">赞助支持</div>
+          <div class="card-label">赞助上游</div>
           <div class="card-value">支持作者</div>
         </div>
       </div>
@@ -417,10 +328,23 @@ async function handleReceiveBetaUpdatesChange(): Promise<void> {
             stroke-linecap="round"
           />
         </svg>
-        {{ isCheckingUpdate ? '检查中...' : '检查更新' }}
+        {{ isCheckingUpdate ? '检查中...' : '检查上游版本' }}
       </button>
 
-      <!-- 版权信息 -->
+      <div class="upstream-notice" role="status" aria-live="polite">
+        <p>{{ isCheckingUpdate ? '正在获取上游稳定版信息…' : noticeText }}</p>
+        <p class="upstream-notice-hint">上游新版需合并源码并重新构建本地版本。</p>
+        <button
+          v-if="upstreamNotice?.kind === 'available' && upstreamNotice.releaseUrl"
+          class="btn"
+          :disabled="isOpeningRelease || isCheckingUpdate"
+          @click="openUpstreamRelease"
+        >
+          查看上游发布说明
+        </button>
+      </div>
+
+      <!-- 保留上游版权归属 -->
       <div class="about-copyright">
         Copyright &copy; 2025-{{ currentYear }} ZTools. All rights reserved.
       </div>
@@ -432,6 +356,7 @@ async function handleReceiveBetaUpdatesChange(): Promise<void> {
 .content-panel {
   position: relative;
   height: 100%;
+  overflow-y: auto;
 }
 
 .about-container {
@@ -465,7 +390,35 @@ async function handleReceiveBetaUpdatesChange(): Promise<void> {
 .about-version {
   font-size: 14px;
   color: var(--text-secondary);
-  margin-bottom: 28px;
+  margin-bottom: 8px;
+}
+
+.local-edition-description {
+  margin: 0 0 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.upstream-notice {
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--text-color);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.upstream-notice p {
+  margin: 0 0 8px;
+}
+.upstream-notice-hint {
+  color: var(--text-secondary);
 }
 
 /* 卡片区域 */
@@ -608,88 +561,6 @@ async function handleReceiveBetaUpdatesChange(): Promise<void> {
 
 .spinning {
   animation: spin 1s linear infinite;
-}
-
-/* 自动检查更新 */
-.auto-update-row {
-  position: absolute;
-  top: 16px;
-  right: 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 1;
-}
-
-.auto-update-label {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.update-options-wrapper {
-  position: relative;
-}
-
-.update-options-button {
-  font-size: 17px;
-}
-
-.update-options-button:hover,
-.update-options-button[aria-expanded='true'] {
-  background: var(--hover-bg);
-  color: var(--primary-color);
-}
-
-.update-options-menu {
-  position: absolute;
-  top: calc(100% + 7px);
-  right: 0;
-  width: 276px;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  box-sizing: border-box;
-  border: 1px solid var(--divider-color);
-  border-radius: 7px;
-  background: var(--dialog-bg);
-  box-shadow: 0 10px 28px var(--shadow-color);
-  padding: 13px 14px;
-  color: var(--text-color);
-}
-
-.update-options-copy {
-  min-width: 0;
-  flex: 1;
-  display: grid;
-  gap: 4px;
-}
-
-.update-options-copy span {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.update-options-copy small {
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.beta-update-toggle {
-  flex: none;
-}
-
-.update-options-enter-active,
-.update-options-leave-active {
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
-}
-
-.update-options-enter-from,
-.update-options-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
 }
 
 /* 版权信息 */

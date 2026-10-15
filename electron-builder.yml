@@ -1,9 +1,6 @@
-appId: top.z-tools
-productName: ZTools
-publish:
-  provider: github
-  owner: ZToolsCenter
-  repo: ZTools
+appId: tools.cai.local
+productName: CAI.Tools
+publish: null
 directories:
   buildResources: build
 files:
@@ -41,7 +38,7 @@ fileAssociations:
     role: Viewer
 win:
   compression: maximum
-  executableName: ZTools
+  executableName: CAI.Tools
   artifactName: ${name}-${version}-${os}-${arch}.${ext}
   target:
     - target: nsis

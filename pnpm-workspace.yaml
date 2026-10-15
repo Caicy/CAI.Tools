@@ -1,0 +1,10 @@
+packages:
+  - internal-plugins/setting
+sharedWorkspaceLockfile: false
+allowBuilds:
+  electron: true
+  esbuild: true
+  lmdb: true
+  msgpackr-extract: true
+  uiohook-napi: true
+  less: true

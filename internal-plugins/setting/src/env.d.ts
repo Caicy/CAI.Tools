@@ -2,6 +2,7 @@
 /// <reference types="@ztools-center/ztools-api-types" />
 
 import type { SearchWallpaperConfig } from '@shared/searchWallpaper'
+import type { LocalEditionInfo, UpstreamNotice } from '@shared/localEdition'
 import type {
   AiProviderInput,
   AiProviderMutationResult,
@@ -36,6 +37,11 @@ declare global {
       hideMainWindow: (isRestorePreWindow?: boolean) => boolean | Promise<boolean>
 
       internal: {
+        getLocalEditionInfo: () => Promise<LocalEditionInfo>
+        checkUpstreamUpdate: () => Promise<UpstreamNotice>
+        openUpstreamRelease: (
+          url: string
+        ) => Promise<{ success: boolean; code?: string; error?: string }>
         // 数据库操作（主程序专用，直接操作 ZTOOLS 命名空间）
         dbPut: (key: string, data: any) => Promise<any>
         dbGet: (key: string) => Promise<any>

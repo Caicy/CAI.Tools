@@ -1,13 +1,21 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const scanner = vi.hoisted(() => ({ scan: vi.fn() }))
 
 vi.mock('../../src/main/core/native/index', () => ({
-  MuiResolver: { resolve: vi.fn(() => new Map()) }
+  MuiResolver: { resolve: vi.fn(() => new Map()) },
+  WindowsShortcutScanner: scanner
+}))
+vi.mock('../../src/main/utils/systemPaths', () => ({
+  getWindowsRecursiveScanPaths: () => ['C:\\Start Menu'],
+  getWindowsFlatScanPaths: () => ['C:\\Desktop']
 }))
 
 import {
   shouldSkipShortcut,
   getIconUrl,
   deduplicateCommands,
+  scanApplications,
   SKIP_FOLDERS
 } from '../../src/main/core/commandScanner/windowsScanner'
 
@@ -197,72 +205,66 @@ describe('deduplicateCommands', () => {
   })
 })
 
-// ========== parseUrlFile ==========
+// .url 文本解析已迁往原生模块；此处验证真实 TS 扫描入口与原生结果的契约。
+describe('native scanner result adapter', () => {
+  beforeEach(() => scanner.scan.mockReset().mockResolvedValue([]))
 
-describe('parseUrlFile', () => {
-  it('应正确解析含应用协议的 .url 文件', async () => {
-    vi.mock('fs/promises', () => ({
-      default: {
-        readFile: vi.fn()
-      }
-    }))
-
-    const fsPromises = (await import('fs/promises')).default
-    const mockedReadFile = vi.mocked(fsPromises.readFile)
-    mockedReadFile.mockResolvedValue(
-      '[InternetShortcut]\nURL=steam://rungameid/12345\nIconFile=C:\\steam.ico'
-    )
-
-    const { parseUrlFile } = await import('../../src/main/core/commandScanner/windowsScanner')
-    const result = await parseUrlFile('test.url')
-
-    expect(result).not.toBeNull()
-    expect(result!.url).toBe('steam://rungameid/12345')
-    expect(result!.iconFile).toBe('C:\\steam.ico')
+  it('保留原生解析的应用协议和图标，并传递递归及扁平来源', async () => {
+    scanner.scan.mockResolvedValueOnce([
+      { name: 'Steam Game', path: 'steam://rungameid/12345', icon: 'C:\\steam.ico' }
+    ])
+    const result = await scanApplications()
+    expect(scanner.scan).toHaveBeenCalledWith(['C:\\Start Menu'], [], SKIP_FOLDERS)
+    expect(scanner.scan).toHaveBeenCalledWith([], ['C:\\Desktop'], SKIP_FOLDERS)
+    expect(result).toMatchObject({
+      complete: true,
+      errors: [],
+      apps: [
+        {
+          name: 'Steam Game',
+          path: 'steam://rungameid/12345',
+          icon: getIconUrl('C:\\steam.ico'),
+          acronym: 'sg'
+        }
+      ]
+    })
   })
 
-  it('应返回 null 对于 http:// 链接', async () => {
-    const fsPromises = (await import('fs/promises')).default
-    const mockedReadFile = vi.mocked(fsPromises.readFile)
-    mockedReadFile.mockResolvedValue('[InternetShortcut]\nURL=http://example.com')
-
-    const { parseUrlFile } = await import('../../src/main/core/commandScanner/windowsScanner')
-    const result = await parseUrlFile('test.url')
-
-    expect(result).toBeNull()
+  it('原生层过滤网页或无效 URL 后的空结果保持为空', async () => {
+    expect(await scanApplications()).toEqual({ apps: [], complete: true, errors: [] })
   })
 
-  it('应返回 null 对于 https:// 链接', async () => {
-    const fsPromises = (await import('fs/promises')).default
-    const mockedReadFile = vi.mocked(fsPromises.readFile)
-    mockedReadFile.mockResolvedValue('[InternetShortcut]\nURL=https://example.com')
-
-    const { parseUrlFile } = await import('../../src/main/core/commandScanner/windowsScanner')
-    const result = await parseUrlFile('test.url')
-
-    expect(result).toBeNull()
+  it('丢弃缺少名称或路径的异常原生条目', async () => {
+    scanner.scan.mockResolvedValueOnce([
+      { name: '', path: 'steam://invalid' },
+      { name: 'Missing path', path: '' }
+    ])
+    expect((await scanApplications()).apps).toEqual([])
   })
 
-  it('应返回 null 当文件无 URL 字段时', async () => {
-    const fsPromises = (await import('fs/promises')).default
-    const mockedReadFile = vi.mocked(fsPromises.readFile)
-    mockedReadFile.mockResolvedValue('[InternetShortcut]\nIconFile=test.ico')
-
-    const { parseUrlFile } = await import('../../src/main/core/commandScanner/windowsScanner')
-    const result = await parseUrlFile('test.url')
-
-    expect(result).toBeNull()
+  it('来源读取失败不抹去另一来源的有效快捷方式', async () => {
+    scanner.scan
+      .mockRejectedValueOnce(new Error('directory unavailable'))
+      .mockResolvedValueOnce([{ name: 'Calculator', path: 'C:\\Desktop\\Calculator.lnk' }])
+    const result = await scanApplications()
+    expect(result.complete).toBe(false)
+    expect(result.errors).toEqual(['recursive:C:\\Start Menu: directory unavailable'])
+    expect(result.apps).toHaveLength(1)
+    expect(result.apps[0].name).toBe('Calculator')
   })
 
-  it('应返回 null 当文件读取失败时', async () => {
-    const fsPromises = (await import('fs/promises')).default
-    const mockedReadFile = vi.mocked(fsPromises.readFile)
-    mockedReadFile.mockRejectedValue(new Error('File not found'))
-
-    const { parseUrlFile } = await import('../../src/main/core/commandScanner/windowsScanner')
-    const result = await parseUrlFile('nonexistent.url')
-
-    expect(result).toBeNull()
+  it('经过真实扫描入口过滤帮助条目并合并同名同目标', async () => {
+    scanner.scan
+      .mockResolvedValueOnce([
+        { name: 'Help Center', path: 'C:\\help.lnk' },
+        { name: 'App', path: 'C:\\Start Menu\\App.lnk', targetPath: 'C:\\app.exe' }
+      ])
+      .mockResolvedValueOnce([
+        { name: 'App', path: 'C:\\Desktop\\App.lnk', targetPath: 'C:\\app.exe' }
+      ])
+    expect((await scanApplications()).apps).toMatchObject([
+      { name: 'App', path: 'C:\\Start Menu\\App.lnk' }
+    ])
   })
 })
 

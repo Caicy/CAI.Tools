@@ -1,12 +1,11 @@
 import { ipcMain } from 'electron'
 import aiProviderService from '../../core/aiProviderService.js'
-import officialAIService from '../../core/officialAIService.js'
+import { unavailableOfficialCapability } from '../../../shared/localEdition'
 import type {
   AiProviderInput,
   AiProviderMutationResult,
   AiProviderStore,
-  AiRemoteModel,
-  OfficialAiProviderStatus
+  AiRemoteModel
 } from '../../../shared/aiProviderShared.js'
 
 /**
@@ -54,11 +53,12 @@ class AiModelsAPI {
   }
 
   /**
-   * 获取只读的 ZTools 官方模型及当前登录状态。
-   * @returns 官方供应商状态
+   * 为旧官方模型查询返回本地版的明确能力限制。
+   * @returns 官方能力不可用的失败结果。
    */
-  public async getOfficialProvider(): Promise<OfficialAiProviderStatus> {
-    return officialAIService.getProviderStatus()
+  public async getOfficialProvider(): Promise<ReturnType<typeof unavailableOfficialCapability>> {
+    // 不实例化官方服务或触发目录、会话及余额请求。
+    return unavailableOfficialCapability('官方 AI 模型')
   }
 
   /**

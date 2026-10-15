@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('electron', () => ({
-  app: {},
+  app: { on: vi.fn() },
   globalShortcut: {
     register: mocks.electronRegister,
     unregister: mocks.electronUnregister
@@ -53,6 +53,8 @@ vi.mock('../../src/main/managers/windowManager.js', () => ({
   default: { captureCurrentActiveWindow: mocks.captureCurrentActiveWindow }
 }))
 vi.mock('../../src/main/core/screenCapture.js', () => ({ primeScreenCaptureFrame: vi.fn() }))
+// 设置快捷键用例不操作分离窗口，避免意外导入整个 Electron 窗口启动链。
+vi.mock('../../src/main/core/detachedWindowManager', () => ({ default: {} }))
 vi.mock('../../src/main/api/shared/database.js', () => ({
   default: { dbGet: vi.fn(), dbPut: vi.fn() }
 }))

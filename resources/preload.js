@@ -1006,6 +1006,23 @@ window.ztools = {
 
   // 内置插件专用 API（仅限内置插件调用）
   internal: {
+    /**
+     * 读取本地版标识和官方能力开关。
+     * @returns 本地版能力信息的 Promise。
+     */
+    getLocalEditionInfo: () => electron.ipcRenderer.invoke('local-edition:get-info'),
+    /**
+     * 按用户请求检查上游稳定版发布信息。
+     * @returns 上游版本提醒的 Promise。
+     */
+    checkUpstreamUpdate: () => electron.ipcRenderer.invoke('local-edition:check-upstream'),
+    /**
+     * 通过主进程校验后打开上游发布页。
+     * @param url 待校验的上游发布页地址。
+     * @returns 包含成功状态或错误信息的 Promise。
+     */
+    openUpstreamRelease: (url) =>
+      electron.ipcRenderer.invoke('local-edition:open-upstream-release', url),
     // ==================== 数据库 API (ZTOOLS/ 命名空间) ====================
     dbPut: async (key, value) => await electron.ipcRenderer.invoke('internal:db-put', key, value),
     dbGet: async (key) => await electron.ipcRenderer.invoke('internal:db-get', key),

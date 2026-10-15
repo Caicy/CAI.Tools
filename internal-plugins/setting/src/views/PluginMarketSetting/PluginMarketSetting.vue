@@ -6,7 +6,10 @@ import { compareVersions, upgradeInstalledPluginFromMarket, weightedSearch } fro
 import { PluginDetail, PluginCard, CategoryCard, CategoryDetail, RefreshButton } from './components'
 import type { Plugin, CategoryInfo, CategoryLayoutSection, PluginDownloadState } from './components'
 import { useJumpFunction, useZtoolsSubInput } from '@/composables'
-import { PluginMarketSettingJumpFunction } from '@/views/PluginMarketSetting/PluginMarketSetting'
+import {
+  normalizePluginMarketTab,
+  type PluginMarketSettingJumpFunction
+} from '@/views/PluginMarketSetting/PluginMarketSetting'
 import { getMarketCategoryIcon } from './marketAssets'
 
 const { success, error, confirm } = useToast()
@@ -97,9 +100,7 @@ const isDetailVisible = ref(false)
 const selectedPlugin = ref<Plugin | null>(null)
 const pendingDetailPluginName = ref<string | null>(null)
 const pendingDetailTab = ref<TabId | undefined>()
-const pendingCommentId = ref<number | null>(null)
 const activeDetailTab = ref<TabId | undefined>()
-const activeCommentId = ref<number | null>(null)
 
 // 分类详情面板状态
 const isCategoryDetailVisible = ref(false)
@@ -111,7 +112,7 @@ const showScrollableContent = computed(
 )
 
 /**
- * 在插件列表就绪后打开通知或跳转请求指定的插件详情。
+ * 在插件列表就绪后打开跳转请求指定的插件详情。
  * @returns 无返回值。
  */
 function openPendingPluginDetail(): void {
@@ -123,9 +124,7 @@ function openPendingPluginDetail(): void {
 
   pendingDetailPluginName.value = null
   activeDetailTab.value = pendingDetailTab.value
-  activeCommentId.value = pendingCommentId.value
   pendingDetailTab.value = undefined
-  pendingCommentId.value = null
   openPluginDetail(plugin, true)
 }
 
@@ -251,15 +250,15 @@ async function fetchPlugins(): Promise<void> {
 }
 
 /**
- * 打开插件详情，并按调用来源决定是否保留通知定位目标。
+ * 打开插件详情，并按调用来源决定是否保留指定标签。
  * @param plugin 要打开的插件。
- * @param preserveNotificationTarget 是否保留留言标签和评论定位参数。
+ * @param preserveDetailTab 是否保留路由指定的可用标签。
  * @returns 无返回值。
  */
-function openPluginDetail(plugin: Plugin, preserveNotificationTarget = false): void {
-  if (!preserveNotificationTarget) {
+function openPluginDetail(plugin: Plugin, preserveDetailTab = false): void {
+  // 普通点击从默认详情开始，路由跳转保留已归一化的标签。
+  if (!preserveDetailTab) {
     activeDetailTab.value = undefined
-    activeCommentId.value = null
   }
   selectedPlugin.value = plugin
   isDetailVisible.value = true
@@ -569,8 +568,8 @@ useJumpFunction<PluginMarketSettingJumpFunction>((state) => {
     setSubInput(state.payload)
   } else if (state.payload && state.type === 'detail') {
     pendingDetailPluginName.value = state.payload
-    pendingDetailTab.value = state.tab
-    pendingCommentId.value = state.commentId || null
+    // 历史路由状态也必须回退到当前可用标签。
+    pendingDetailTab.value = normalizePluginMarketTab(state.tab)
     openPendingPluginDetail()
   }
 })
@@ -792,7 +791,6 @@ onUnmounted(() => {
         :is-loading="installingPlugin === selectedPlugin.name"
         :download-state="downloadStates[selectedPlugin.name]"
         :initial-tab="activeDetailTab"
-        :target-comment-id="activeCommentId"
         @back="closePluginDetail"
         @open="handleOpenPlugin(selectedPlugin)"
         @open-folder="handleOpenFolder(selectedPlugin)"

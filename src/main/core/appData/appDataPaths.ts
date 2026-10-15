@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { app } from 'electron'
+import { LOCAL_DEFAULT_ROOT_NAME } from '../../../shared/localEdition'
 import { assertSafePluginArtifactPart } from '../../utils/pluginStorage.js'
 
 export interface AppDataPathOptions {
@@ -27,16 +27,16 @@ export interface ZToolsDataLayout {
 }
 
 /**
- * 获取 ZTools 数据根目录，测试进程可通过显式配置隔离真实用户数据。
+ * 获取本地版数据根目录，显式配置和环境变量可覆盖默认隔离目录。
  *
  * @param options 数据目录解析选项。
- * @returns ZTools 数据根目录绝对路径。
+ * @returns 本地版数据根目录绝对路径。
  */
 export function getZToolsRoot(options: AppDataPathOptions = {}): string {
   return (
     options.dataRoot ||
     process.env.ZTOOLS_DATA_ROOT ||
-    path.join(options.homeDir || os.homedir(), '.ztools')
+    path.join(options.homeDir || os.homedir(), LOCAL_DEFAULT_ROOT_NAME)
   )
 }
 
@@ -151,25 +151,11 @@ export function ensure3Layout(options: AppDataPathOptions = {}): ZToolsDataLayou
   return layout
 }
 
+/**
+ * 解析显式兼容目录；未指定时限定在本地版根目录，禁止默认探测原版数据。
+ * @param options 数据目录解析选项。
+ * @returns 显式兼容目录或本地版根目录。
+ */
 function getDefaultLegacyUserDataPath(options: AppDataPathOptions): string {
-  if (process.env.ZTOOLS_LEGACY_USER_DATA_PATH) {
-    return process.env.ZTOOLS_LEGACY_USER_DATA_PATH
-  }
-  try {
-    const userData = app?.getPath?.('userData')
-    if (userData) return userData
-  } catch {
-    // fall back to the production macOS path below
-  }
-
-  if (process.platform === 'darwin') {
-    return path.join(options.homeDir || os.homedir(), 'Library', 'Application Support', 'ZTools')
-  }
-  if (process.platform === 'win32') {
-    return path.join(
-      process.env.APPDATA || path.join(options.homeDir || os.homedir(), 'AppData', 'Roaming'),
-      'ZTools'
-    )
-  }
-  return path.join(options.homeDir || os.homedir(), '.config', 'ZTools')
+  return process.env.ZTOOLS_LEGACY_USER_DATA_PATH || getZToolsRoot(options)
 }

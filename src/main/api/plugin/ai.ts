@@ -2,7 +2,6 @@ import { ipcMain } from 'electron'
 import type { PluginManager } from '../../managers/pluginManager'
 import detachedWindowManager from '../../core/detachedWindowManager'
 import aiProviderService, { type ResolvedAiModel } from '../../core/aiProviderService.js'
-import officialAIService from '../../core/officialAIService.js'
 import { createAdapter } from './aiProtocol/adapters'
 import {
   normalizeAiModelCapabilities,
@@ -259,34 +258,36 @@ class PluginAiAPI {
   }
 
   /**
-   * 获取供插件构建选择器的全部已启用 AI 模型。
+   * 获取供插件构建选择器的全部已启用自配 AI 模型。
    * @returns 带供应商展示信息的模型条目
    */
   private async getAllAiModels(): Promise<AiModelChoice[]> {
-    const localModels = aiProviderService.getModelChoices()
-    try {
-      return [...localModels, ...(await officialAIService.getModelChoices())]
-    } catch (error) {
-      // 官方服务暂不可用不应隐藏用户已经配置的本地模型。
-      console.warn('[AI] 获取官方模型失败:', error)
-      return localModels
-    }
+    // 本地版仅展示用户自己的供应商模型，不查询官方目录。
+    return aiProviderService.getModelChoices()
   }
 
   /**
-   * 将插件选择值解析为供应商连接和真实远端模型。
+   * 将插件选择值解析为自配供应商连接和真实远端模型。
    * @param modelRef 插件传入的公开 ID、稳定 value 或历史兼容 ID
    * @returns 已解析的模型调用配置；没有配置时返回 null
    * @throws 旧式远端模型 ID 同时匹配多个供应商时抛出歧义错误
    */
   private async getModelConfig(modelRef?: string): Promise<ResolvedAiModel | null> {
-    // 明确的官方选择值优先解析，避免被本地同名模型抢占。
-    if (officialAIService.isOfficialReference(modelRef)) {
-      return officialAIService.resolveModel(modelRef)
+    // 未配置和历史官方选择值均按本机配置解析，不回退官方服务。
+    return aiProviderService.resolveModel(modelRef)
+  }
+
+  /**
+   * 在创建外部客户端前检查自配供应商必需的 API 密钥。
+   * @param resolvedModel 已解析的本机供应商和模型。
+   * @returns 无返回值。
+   * @throws API 密钥缺失时抛出设置提示。
+   */
+  private assertProviderApiKey(resolvedModel: ResolvedAiModel): void {
+    // 与供应商新增/更新的必填规则一致，阻止损坏配置进入 SDK 默认认证路径。
+    if (!resolvedModel.provider.apiKey?.trim()) {
+      throw new Error('未配置 AI 供应商 API 密钥，请先在设置中填写 API 密钥')
     }
-    const localModel = aiProviderService.resolveModel(modelRef)
-    if (localModel) return localModel
-    return officialAIService.resolveModel(modelRef)
   }
 
   /**
@@ -325,7 +326,7 @@ class PluginAiAPI {
    * @param requestId 当前 AI 请求的唯一 ID
    * @param webContents 发起调用的插件页面
    * @returns AI 调用结果
-   * @throws 模型选择值存在供应商歧义时抛出错误
+   * @throws 模型选择值存在供应商歧义或 API 密钥缺失时抛出错误
    */
   private async callAI(
     option: AiOption,
@@ -336,6 +337,7 @@ class PluginAiAPI {
     if (!resolvedModel) {
       return { success: false, error: '未找到 AI 模型配置，请先在设置中添加模型' }
     }
+    this.assertProviderApiKey(resolvedModel)
 
     const abortController = new AbortController()
     this.abortControllers.set(requestId, abortController)
@@ -404,6 +406,7 @@ class PluginAiAPI {
    * @param webContents 发起请求的插件页面
    * @param onEvent 单轮流式事件接收器
    * @returns 成功时返回完整助手响应，失败时返回结构化错误
+   * @throws 模型选择值存在供应商歧义或 API 密钥缺失时抛出错误，由 IPC 归一化。
    */
   private async callSingleAIChat(
     option: AiChatOption,
@@ -448,6 +451,7 @@ class PluginAiAPI {
       }
     }
 
+    this.assertProviderApiKey(resolvedModel)
     const abortController = new AbortController()
     this.abortControllers.set(requestId, abortController)
     const timeout = Math.min(
@@ -513,7 +517,7 @@ class PluginAiAPI {
    * @param webContents 发起调用的插件页面
    * @param onChunk 接收流式消息片段的回调
    * @returns 调用完成后结束的 Promise
-   * @throws 模型无效、调用中止或远端请求失败时抛出错误
+   * @throws 模型无效、API 密钥缺失、调用中止或远端请求失败时抛出错误
    */
   private async callAIStream(
     option: AiOption,
@@ -525,6 +529,7 @@ class PluginAiAPI {
     if (!resolvedModel) {
       throw new Error('未找到 AI 模型配置，请先在设置中添加模型')
     }
+    this.assertProviderApiKey(resolvedModel)
 
     const abortController = new AbortController()
     this.abortControllers.set(requestId, abortController)

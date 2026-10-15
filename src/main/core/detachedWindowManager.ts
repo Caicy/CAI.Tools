@@ -58,6 +58,15 @@ class DetachedWindowManager {
   private resizeSaveTimers: Map<string, NodeJS.Timeout> = new Map()
   private lastSavedSizeByPlugin: Map<string, { width: number; height: number }> = new Map()
   private suppressedSizePersistenceWindows = new Set<string>()
+  private headerSizeSnapshots = new WeakMap<
+    BrowserWindow,
+    {
+      width: number
+      viewHeight: number
+      contentWidth?: number
+      contentHeight?: number
+    }
+  >()
   private compactWindowHeader = false
 
   /**
@@ -81,7 +90,7 @@ class DetachedWindowManager {
   }
 
   /**
-   * 更新所有分离插件窗口的标题栏密度，并保持插件正文高度不变。
+   * 更新所有分离插件窗口的标题栏密度，并保持插件正文宽高不变。
    * @param enabled 是否启用紧凑顶部栏。
    * @returns 无返回值。
    */
@@ -93,24 +102,76 @@ class DetachedWindowManager {
     this.compactWindowHeader = compactWindowHeader
     const titlebarHeight = this.getTitlebarHeight()
 
-    for (const info of this.detachedWindowMap.values()) {
+    for (const [windowId, info] of this.detachedWindowMap.entries()) {
       if (info.window.isDestroyed()) continue
 
-      // 使用视图真实高度，避免覆盖插件主动设置或用户保存的正文尺寸。
-      const windowBounds = info.window.getContentBounds()
+      // 在原生 resize 回调可能修改视图之前保存正文尺寸，避免把系统边缘像素累积到下一次切换。
       const viewBounds = info.view.getBounds()
+      const snapshot = {
+        width: viewBounds.width,
+        viewHeight: viewBounds.height,
+        contentWidth: undefined as number | undefined,
+        contentHeight: undefined as number | undefined
+      }
+      this.headerSizeSnapshots.set(info.window, snapshot)
       info.window.webContents.send('update-compact-main-window-header', compactWindowHeader)
       if (process.platform === 'darwin') {
         info.window.setWindowButtonPosition(this.resolveTrafficLightPosition(titlebarHeight))
       }
       info.window.setMinimumSize(WINDOW_WIDTH, titlebarHeight)
-      info.window.setContentSize(windowBounds.width, viewBounds.height + titlebarHeight)
+      info.window.setContentSize(viewBounds.width, viewBounds.height + titlebarHeight)
+      // 记录本次原生尺寸，用于识别随后到达的同次 resize；真正改变窗口大小后快照失效。
+      const contentBounds = info.window.getContentBounds()
+      snapshot.contentWidth = contentBounds.width
+      snapshot.contentHeight = contentBounds.height
+      // setContentSize 可同步触发 resize；最后恢复同一份正文快照，只改变标题栏占据的位置。
       info.view.setBounds({
         x: 0,
         y: titlebarHeight,
-        width: windowBounds.width,
+        width: viewBounds.width,
         height: viewBounds.height
       })
+      // 覆盖 setter 内同步 resize 可能排入的保存任务，同时保留升级流程已有的抑制状态。
+      if (!this.suppressedSizePersistenceWindows.has(windowId)) {
+        this.schedulePersistWindowSize(
+          windowId,
+          info.pluginName,
+          viewBounds.width,
+          viewBounds.height
+        )
+      }
+    }
+  }
+
+  /**
+   * 响应窗口尺寸变化，保持同次标题栏切换的正文快照并保存真实用户调整。
+   * @param windowId 分离窗口标识。
+   * @param win 分离窗口。
+   * @param pluginView 当前插件视图。
+   * @param pluginName 插件运行时名称。
+   * @returns 无返回值。
+   */
+  private updateResizedWindowLayout(
+    windowId: string,
+    win: BrowserWindow,
+    pluginView: WebContentsView,
+    pluginName: string
+  ): void {
+    if (win.isDestroyed()) return
+    const bounds = win.getContentBounds()
+    const titlebarHeight = this.getTitlebarHeight()
+    const snapshot = this.headerSizeSnapshots.get(win)
+    const preserve =
+      snapshot &&
+      (snapshot.contentWidth === undefined ||
+        (snapshot.contentWidth === bounds.width && snapshot.contentHeight === bounds.height))
+    // 相同原生尺寸属于 setter 的同步或迟到事件；真实窗口调整立即退出快照保护。
+    if (snapshot && !preserve) this.headerSizeSnapshots.delete(win)
+    const width = preserve ? snapshot.width : bounds.width
+    const viewHeight = preserve ? snapshot.viewHeight : bounds.height - titlebarHeight
+    pluginView.setBounds({ x: 0, y: titlebarHeight, width, height: viewHeight })
+    if (!this.suppressedSizePersistenceWindows.has(windowId)) {
+      this.schedulePersistWindowSize(windowId, pluginName, width, viewHeight)
     }
   }
 
@@ -168,7 +229,12 @@ class DetachedWindowManager {
   }
 
   /**
-   * 防抖保存尺寸，避免频繁写入
+   * 防抖保存尺寸，并在执行时重新确认升级流程未抑制保存。
+   * @param windowId 分离窗口标识。
+   * @param pluginName 插件运行时名称。
+   * @param width 正文宽度。
+   * @param viewHeight 正文高度。
+   * @returns 无返回值。
    */
   private schedulePersistWindowSize(
     windowId: string,
@@ -182,7 +248,10 @@ class DetachedWindowManager {
     }
 
     const timer = setTimeout(() => {
-      this.persistWindowSize(pluginName, width, viewHeight)
+      // 排队后可能进入升级状态，不能让旧任务越过新的保存抑制边界。
+      if (!this.suppressedSizePersistenceWindows.has(windowId)) {
+        this.persistWindowSize(pluginName, width, viewHeight)
+      }
       this.resizeSaveTimers.delete(windowId)
     }, 300)
 
@@ -342,27 +411,7 @@ class DetachedWindowManager {
 
       // 监听窗口大小变化
       win.on('resize', () => {
-        if (!win.isDestroyed()) {
-          const newBounds = win.getContentBounds()
-          const currentTitlebarHeight = this.getTitlebarHeight()
-          // 只需要更新插件视图大小（标题栏由窗口自动处理）
-          pluginView.setBounds({
-            x: 0,
-            y: currentTitlebarHeight,
-            width: newBounds.width,
-            height: newBounds.height - currentTitlebarHeight
-          })
-
-          // 升级期间的 0 高度是临时状态，不得覆盖用户保存的窗口尺寸。
-          if (!this.suppressedSizePersistenceWindows.has(windowId)) {
-            this.schedulePersistWindowSize(
-              windowId,
-              pluginName,
-              newBounds.width,
-              newBounds.height - currentTitlebarHeight
-            )
-          }
-        }
+        this.updateResizedWindowLayout(windowId, win, pluginView, pluginName)
       })
 
       // 保存窗口信息

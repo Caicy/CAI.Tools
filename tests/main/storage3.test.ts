@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -11,183 +11,143 @@ import { DefaultAccountImportService } from '../../src/main/core/storage/default
 
 const tempRoots: string[] = []
 
+/**
+ * 为存储回归创建独立 home，确保 LMDB 和迁移来源均不触及真实数据。
+ * @returns 临时 home 绝对路径。
+ */
 function makeTempRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ztools-storage3-'))
   tempRoots.push(root)
+  // homeDir 的优先级低于环境变量，每个用例必须同时覆盖两个目录变量。
+  vi.stubEnv('ZTOOLS_DATA_ROOT', path.join(root, '.cai-tools'))
+  vi.stubEnv('ZTOOLS_LEGACY_USER_DATA_PATH', path.join(root, 'legacy-user-data'))
   return root
 }
 
+/**
+ * 删除本测试拥有的临时根目录。
+ * @param root 已创建的测试临时根目录。
+ * @returns 无返回值。
+ */
 function cleanup(root: string): void {
   fs.rmSync(root, { recursive: true, force: true })
 }
 
 afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
   for (const root of tempRoots.splice(0)) cleanup(root)
 })
 
-describe('ZTools 3.0 storage routing', () => {
-  it('routes device data to device db and account data to current account db', () => {
+describe('CAI.Tools local storage routing', () => {
+  it('routes device data and default business data to separate persistent databases', () => {
     const homeDir = makeTempRoot()
     const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    const db = manager.getRouter()
-
-    db.put({ _id: 'ZTOOLS/settings-general', data: { theme: 'dark' } })
-    db.put({ _id: 'ZTOOLS/plugins', data: [{ name: 'demo' }] })
-    db.put({ _id: 'ZTOOLS/ai-models', data: [{ id: 'model-a' }] })
-    db.put({ _id: 'PLUGIN/demo/settings', data: { value: 'default' } })
-
-    expect(manager.getDeviceDb().get('ZTOOLS/settings-general')).not.toBeNull()
-    expect(manager.getDeviceDb().get('ZTOOLS/plugins')).not.toBeNull()
-    expect(manager.getAccountDb().get('ZTOOLS/ai-models')).not.toBeNull()
-    expect(manager.getAccountDb().get('PLUGIN/demo/settings')).not.toBeNull()
-    expect(manager.getDeviceDb().get('PLUGIN/demo/settings')).toBeNull()
-
-    manager.switchAccount('alice')
-    const aliceDb = manager.getRouter()
-    expect(aliceDb.get('ZTOOLS/settings-general')?.data.theme).toBe('dark')
-    expect(aliceDb.get('ZTOOLS/plugins')?.data[0].name).toBe('demo')
-    expect(aliceDb.get('PLUGIN/demo/settings')).toBeNull()
-
-    aliceDb.put({ _id: 'PLUGIN/demo/settings', data: { value: 'alice' } })
-    expect(aliceDb.get('PLUGIN/demo/settings')?.data.value).toBe('alice')
-
-    manager.switchAccount(null)
-    expect(manager.getRouter().get('PLUGIN/demo/settings')?.data.value).toBe('default')
-    manager.close()
+    try {
+      const db = manager.getRouter()
+      db.put({ _id: 'ZTOOLS/settings-general', data: { theme: 'dark' } })
+      db.put({ _id: 'ZTOOLS/plugins', data: [{ name: 'demo' }] })
+      db.put({ _id: 'ZTOOLS/ai-models', data: [{ id: 'model-a' }] })
+      db.put({ _id: 'PLUGIN/demo/settings', data: { value: 'default' } })
+      expect(manager.getDeviceDb().get('ZTOOLS/settings-general')).not.toBeNull()
+      expect(manager.getDeviceDb().get('ZTOOLS/plugins')).not.toBeNull()
+      expect(manager.getAccountDb().get('ZTOOLS/ai-models')).not.toBeNull()
+      expect(manager.getAccountDb().get('PLUGIN/demo/settings')).not.toBeNull()
+      expect(manager.getDeviceDb().get('PLUGIN/demo/settings')).toBeNull()
+      expect(() => manager.switchAccount('alice')).toThrow('当前本地版不提供官方服务能力')
+      manager.switchAccount(null)
+      expect(db.get('PLUGIN/demo/settings')?.data.value).toBe('default')
+    } finally {
+      manager.close()
+    }
+    const reopened = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
+    try {
+      expect(reopened.getCurrentAccountUid()).toBeNull()
+      expect(reopened.getRouter().get('PLUGIN/demo/settings')?.data.value).toBe('default')
+      expect(reopened.getRouter().get('ZTOOLS/settings-general')?.data.theme).toBe('dark')
+    } finally {
+      reopened.close()
+    }
   })
 
-  it('keeps sync changelog scoped to account data only', () => {
+  it('keeps sync changelog scoped to default business data only', () => {
+    const manager = new StorageManager({ homeDir: makeTempRoot(), mapSize: 128 * 1024 * 1024 })
+    try {
+      const db = manager.getRouter()
+      db.put({ _id: 'ZTOOLS/settings-general', data: { theme: 'dark' } })
+      db.put({ _id: 'ZTOOLS/ai-models', data: [{ id: 'model-a' }] })
+      db.put({ _id: 'PLUGIN/demo/settings', data: { value: 'default' } })
+      expect(db.getChangesSince(0).map((change) => change.docId)).toEqual([
+        'ZTOOLS/ai-models',
+        'PLUGIN/demo/settings'
+      ])
+    } finally {
+      manager.close()
+    }
+  })
+
+  it('preserves routing compatibility for inert auth and sync documents without activating an account', () => {
+    const manager = new StorageManager({ homeDir: makeTempRoot(), mapSize: 128 * 1024 * 1024 })
+    try {
+      const db = manager.getRouter()
+      db.put({ _id: 'AUTH/official-account', data: { username: 'inert-user' } })
+      db.put({ _id: 'SYNC/profile', data: { provider: 'private', enabled: false } })
+      db.put({ _id: 'SYNC/private-session', data: { username: 'inert-private-user' } })
+      expect(manager.getDeviceDb().get('AUTH/official-account')?.data.username).toBe('inert-user')
+      expect(manager.getDeviceDb().get('SYNC/profile')).toBeNull()
+      expect(manager.getDeviceDb().get('SYNC/private-session')).toBeNull()
+      expect(manager.getAccountDb().get('SYNC/profile')?.data.provider).toBe('private')
+      expect(manager.getAccountDb().get('SYNC/private-session')?.data.username).toBe(
+        'inert-private-user'
+      )
+      expect(manager.getCurrentAccountUid()).toBeNull()
+    } finally {
+      manager.close()
+    }
+  })
+
+  it('does not create hashed account directories when rejecting a switch', () => {
     const homeDir = makeTempRoot()
     const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    const db = manager.getRouter()
-
-    db.put({ _id: 'ZTOOLS/settings-general', data: { theme: 'dark' } })
-    db.put({ _id: 'ZTOOLS/ai-models', data: [{ id: 'model-a' }] })
-    db.put({ _id: 'PLUGIN/demo/settings', data: { value: 'default' } })
-
-    const changes = db.getChangesSince(0)
-    expect(changes.map((change) => change.docId)).toEqual([
-      'ZTOOLS/ai-models',
-      'PLUGIN/demo/settings'
-    ])
-    manager.close()
+    try {
+      manager.init()
+      expect(() => manager.switchAccount('user@example.com')).toThrow('账号切换')
+      const layout = getZToolsDataLayout({ homeDir })
+      expect(fs.readdirSync(layout.accountsRoot)).toEqual(['default'])
+      expect(fs.existsSync(path.join(layout.accountsRoot, hashAccountId('user@example.com')))).toBe(
+        false
+      )
+      expect(path.basename(path.dirname(layout.accountsRoot))).toBe('lmdb')
+    } finally {
+      manager.close()
+    }
   })
 
-  it('keeps the official account on the device and private sync settings in each data space', () => {
-    const homeDir = makeTempRoot()
-    const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    const db = manager.getRouter()
-
-    db.put({
-      _id: 'AUTH/official-account',
-      data: { username: 'official-user', token: 'official-token' }
-    })
-    db.put({ _id: 'SYNC/profile', data: { provider: 'private', enabled: true } })
-    db.put({
-      _id: 'SYNC/private-session',
-      data: { serverUrl: 'ws://private.example', username: 'private-user', token: 'private-token' }
-    })
-
-    expect(manager.getDeviceDb().get('AUTH/official-account')?.data.username).toBe('official-user')
-    expect(manager.getDeviceDb().get('SYNC/profile')).toBeNull()
-    expect(manager.getDeviceDb().get('SYNC/private-session')).toBeNull()
-    expect(manager.getAccountDb().get('SYNC/profile')?.data.provider).toBe('private')
-    expect(manager.getAccountDb().get('SYNC/private-session')?.data.username).toBe('private-user')
-
-    manager.switchAccount('alice')
-    expect(manager.getRouter().get('AUTH/official-account')?.data.token).toBe('official-token')
-    expect(manager.getRouter().get('SYNC/profile')).toBeNull()
-    expect(manager.getRouter().get('SYNC/private-session')).toBeNull()
-
-    manager.getRouter().put({
-      _id: 'SYNC/profile',
-      data: { provider: 'official', enabled: false }
-    })
-    manager.switchAccount(null)
-    expect(manager.getRouter().get('SYNC/profile')?.data.provider).toBe('private')
-    expect(manager.getRouter().get('SYNC/private-session')?.data.username).toBe('private-user')
-    manager.close()
-  })
-
-  it('uses stable hashed account directory names', () => {
-    const homeDir = makeTempRoot()
-    const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    manager.switchAccount('user@example.com')
-
-    const layout = getZToolsDataLayout({ homeDir })
-    expect(fs.existsSync(path.join(layout.accountsRoot, hashAccountId('user@example.com')))).toBe(
-      true
-    )
-    expect(path.basename(path.dirname(layout.accountsRoot))).toBe('lmdb')
-    manager.close()
-  })
-
-  it('persists current account in device db and restores it on next startup', () => {
-    const homeDir = makeTempRoot()
-    const managerA = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    managerA.switchAccount('alice')
-    managerA.getRouter().put({ _id: 'PLUGIN/demo/settings', data: { value: 'alice' } })
-    expect(managerA.getDeviceDb().get('SYNC/current-account')?.data.uid).toBe('alice')
-    managerA.close()
-
-    const managerB = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    expect(managerB.getCurrentAccountUid()).toBe('alice')
-    expect(managerB.getRouter().get('PLUGIN/demo/settings')?.data.value).toBe('alice')
-    managerB.close()
-  })
-
-  it('deletes only the current account directory and returns to persistent default storage', () => {
+  it('preserves default data and legacy account directories when deletion is rejected', () => {
     const homeDir = makeTempRoot()
     const layout = getZToolsDataLayout({ homeDir })
+    const legacyAccountPath = path.join(layout.accountsRoot, hashAccountId('legacy-user'))
+    fs.mkdirSync(legacyAccountPath, { recursive: true })
+    fs.writeFileSync(path.join(legacyAccountPath, 'sentinel'), 'untouched')
     const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-
-    manager.getRouter().put({ _id: 'PLUGIN/demo/settings', data: { value: 'default' } })
-    manager.switchAccount('other-user')
-    manager.getRouter().put({ _id: 'PLUGIN/demo/settings', data: { value: 'other' } })
-    const otherAccountPath = path.join(layout.accountsRoot, hashAccountId('other-user'))
-
-    manager.switchAccount('delete-user')
-    manager.getRouter().put({ _id: 'PLUGIN/demo/settings', data: { value: 'delete-me' } })
-    const deletedAccountPath = path.join(layout.accountsRoot, hashAccountId('delete-user'))
-    expect(fs.existsSync(deletedAccountPath)).toBe(true)
-
-    manager.deleteCurrentAccount(' delete-user ')
-
-    expect(manager.getCurrentAccountUid()).toBeNull()
-    expect(manager.getRouter().get('PLUGIN/demo/settings')?.data.value).toBe('default')
-    expect(manager.getDeviceDb().get('SYNC/current-account')?.data.uid).toBeNull()
-    expect(fs.existsSync(deletedAccountPath)).toBe(false)
-    expect(fs.existsSync(otherAccountPath)).toBe(true)
-    expect(fs.existsSync(layout.defaultAccountLmdbPath)).toBe(true)
-    manager.close()
-
-    const reopenedManager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    expect(reopenedManager.getCurrentAccountUid()).toBeNull()
-    expect(reopenedManager.getRouter().get('PLUGIN/demo/settings')?.data.value).toBe('default')
-    reopenedManager.close()
-  })
-
-  it('rejects deleting an empty, default, or non-current account', () => {
-    const homeDir = makeTempRoot()
-    const layout = getZToolsDataLayout({ homeDir })
-    const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-
-    expect(() => manager.deleteCurrentAccount('')).toThrow('账号标识不能为空')
-    expect(() => manager.deleteCurrentAccount('default')).toThrow('与当前本地账号不一致')
-    expect(fs.existsSync(layout.defaultAccountLmdbPath)).toBe(true)
-
-    manager.switchAccount('current-user')
-    const currentAccountPath = path.join(layout.accountsRoot, hashAccountId('current-user'))
-    expect(() => manager.deleteCurrentAccount('another-user')).toThrow('与当前本地账号不一致')
-    expect(manager.getCurrentAccountUid()).toBe('current-user')
-    expect(fs.existsSync(currentAccountPath)).toBe(true)
-    expect(fs.existsSync(layout.defaultAccountLmdbPath)).toBe(true)
-    manager.close()
+    try {
+      manager.getRouter().put({ _id: 'PLUGIN/demo/settings', data: { value: 'default' } })
+      expect(() => manager.deleteCurrentAccount('')).toThrow('账号标识不能为空')
+      expect(() => manager.deleteCurrentAccount('default')).toThrow('与当前本地账号不一致')
+      expect(() => manager.deleteCurrentAccount('legacy-user')).toThrow('与当前本地账号不一致')
+      expect(manager.getCurrentAccountUid()).toBeNull()
+      expect(manager.getRouter().get('PLUGIN/demo/settings')?.data.value).toBe('default')
+      expect(fs.existsSync(layout.defaultAccountLmdbPath)).toBe(true)
+      expect(fs.readdirSync(legacyAccountPath)).toEqual(['sentinel'])
+      expect(fs.readFileSync(path.join(legacyAccountPath, 'sentinel'), 'utf8')).toBe('untouched')
+    } finally {
+      manager.close()
+    }
   })
 })
 
-describe('ZTools 3.0 legacy import', () => {
-  it('detects legacy lmdb only on first run before .ztools exists', () => {
+describe('explicit temporary legacy import compatibility', () => {
+  it('detects only an explicitly supplied temporary legacy directory', () => {
     const homeDir = makeTempRoot()
     const legacyUserDataPath = path.join(homeDir, 'Library', 'Application Support', 'ZTools')
     fs.mkdirSync(path.join(legacyUserDataPath, 'lmdb'), { recursive: true })
@@ -203,7 +163,7 @@ describe('ZTools 3.0 legacy import', () => {
       shouldPrompt: true
     })
 
-    fs.mkdirSync(path.join(homeDir, '.ztools'), { recursive: true })
+    fs.mkdirSync(path.join(homeDir, '.cai-tools'), { recursive: true })
     expect(service.detect()).toMatchObject({
       initialized: false,
       legacyLmdbFound: true,
@@ -305,23 +265,23 @@ describe('ZTools 3.0 legacy import', () => {
     expect(result.copiedDirs).toEqual(['plugins', 'avatar'])
     expect(manager.getDeviceDb().get('ZTOOLS/settings-general')?.data.theme).toBe('light')
     expect(manager.getDeviceDb().get('ZTOOLS/settings-general')?.data.avatar).toBe(
-      pathToFileURL(path.join(homeDir, '.ztools', 'avatar', 'user.png')).href
+      pathToFileURL(path.join(homeDir, '.cai-tools', 'avatar', 'user.png')).href
     )
     expect(manager.getDeviceDb().get('ZTOOLS/plugins')?.data[0]).toMatchObject({
       name: 'keep-installed',
-      path: path.join(homeDir, '.ztools', 'plugins', 'demo'),
-      logo: pathToFileURL(path.join(homeDir, '.ztools', 'plugins', 'demo', 'logo.png')).href,
+      path: path.join(homeDir, '.cai-tools', 'plugins', 'demo'),
+      logo: pathToFileURL(path.join(homeDir, '.cai-tools', 'plugins', 'demo', 'logo.png')).href,
       features: [
         {
           code: 'demo',
-          icon: pathToFileURL(path.join(homeDir, '.ztools', 'plugins', 'demo', 'logo.png')).href
+          icon: pathToFileURL(path.join(homeDir, '.cai-tools', 'plugins', 'demo', 'logo.png')).href
         }
       ]
     })
-    expect(fs.existsSync(path.join(homeDir, '.ztools', 'plugins', 'demo', 'plugin.json'))).toBe(
+    expect(fs.existsSync(path.join(homeDir, '.cai-tools', 'plugins', 'demo', 'plugin.json'))).toBe(
       true
     )
-    expect(fs.existsSync(path.join(homeDir, '.ztools', 'avatar', 'user.png'))).toBe(true)
+    expect(fs.existsSync(path.join(homeDir, '.cai-tools', 'avatar', 'user.png'))).toBe(true)
     expect(manager.getAccountDb().get('PLUGIN/demo/settings')?.data.value).toBe('legacy')
     expect(
       Buffer.from(manager.getAccountDb().getAttachment('PLUGIN/demo/settings') || []).toString()
@@ -452,71 +412,29 @@ describe('ZTools 3.0 legacy import', () => {
   })
 })
 
-describe('ZTools 3.0 default account import after login', () => {
-  it('prompts when default has data and imports it into first-time account db', () => {
-    const homeDir = makeTempRoot()
-    const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    manager.getRouter().put({ _id: 'PLUGIN/demo/settings', data: { value: 'default-data' } })
-    manager.getRouter().postAttachment('PLUGIN/demo/settings', Buffer.from('hello'), 'text/plain')
-
-    manager.switchAccount('alice')
-    const service = new DefaultAccountImportService(manager)
-    const status = service.getStatus('alice')
-
-    expect(status).toMatchObject({
-      pending: true,
-      defaultDocCount: 1,
-      targetDocCount: 0,
-      skipped: false,
-      imported: false
-    })
-
-    const result = service.importToCurrentAccount('alice')
-    expect(result.importedDocs).toBe(1)
-    expect(result.importedAttachments).toBe(1)
-    expect(manager.getRouter().get('PLUGIN/demo/settings')?.data.value).toBe('default-data')
-    expect(manager.getRouter().getSyncMeta('PLUGIN/demo/settings')).not.toHaveProperty(
-      '_cloudSynced'
-    )
-    expect(
-      Buffer.from(manager.getRouter().getAttachment('PLUGIN/demo/settings') || []).toString()
-    ).toBe('hello')
-    expect(service.getStatus('alice')).toMatchObject({
-      pending: false,
-      imported: true
-    })
-    manager.close()
-  })
-
-  it('does not prompt again after user skips default data import', () => {
-    const homeDir = makeTempRoot()
-    const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    manager.getRouter().put({ _id: 'PLUGIN/demo/settings', data: { value: 'default-data' } })
-    manager.switchAccount('alice')
-
-    const service = new DefaultAccountImportService(manager)
-    expect(service.getStatus('alice').pending).toBe(true)
-    service.skip('alice')
-    expect(service.getStatus('alice')).toMatchObject({
-      pending: false,
-      skipped: true
-    })
-    manager.close()
-  })
-
-  it('does not prompt when account already has local data', () => {
-    const homeDir = makeTempRoot()
-    const manager = new StorageManager({ homeDir, mapSize: 128 * 1024 * 1024 })
-    manager.getRouter().put({ _id: 'PLUGIN/default/settings', data: { value: 'default-data' } })
-    manager.switchAccount('alice')
-    manager.getRouter().put({ _id: 'PLUGIN/alice/settings', data: { value: 'alice-data' } })
-
-    const service = new DefaultAccountImportService(manager)
-    expect(service.getStatus('alice')).toMatchObject({
-      pending: false,
-      defaultDocCount: 1,
-      targetDocCount: 1
-    })
-    manager.close()
+// 上游登录后多账户导入场景已不适用；本地版以默认空间行为和拒绝切换覆盖替代。
+describe('default import compatibility without a local account', () => {
+  it('does not offer or perform login-dependent import in default storage', () => {
+    const manager = new StorageManager({ homeDir: makeTempRoot(), mapSize: 128 * 1024 * 1024 })
+    try {
+      manager.getRouter().put({ _id: 'PLUGIN/demo/settings', data: { value: 'default-data' } })
+      manager.getRouter().postAttachment('PLUGIN/demo/settings', Buffer.from('hello'), 'text/plain')
+      const service = new DefaultAccountImportService(manager)
+      expect(service.getStatus()).toMatchObject({
+        pending: false,
+        uid: null,
+        imported: false,
+        skipped: false
+      })
+      expect(() => service.importToCurrentAccount()).toThrow('未登录账号')
+      service.skip()
+      expect(manager.getRouter().get('PLUGIN/demo/settings')?.data.value).toBe('default-data')
+      expect(
+        Buffer.from(manager.getRouter().getAttachment('PLUGIN/demo/settings') || []).toString()
+      ).toBe('hello')
+      expect(manager.getDeviceDb().get('SYNC/current-account')).toBeNull()
+    } finally {
+      manager.close()
+    }
   })
 })
