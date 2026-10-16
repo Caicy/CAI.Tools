@@ -1,0 +1,25 @@
+{
+  "baseline": "3.2.0-local.4",
+  "target": "3.2.0-local.5",
+  "root": "D:\\a\\_temp\\cai-tools-upgrade-04gt5c",
+  "dataRoot": "C:\\Users\\runneradmin\\.cai-tools",
+  "profileMode": "default-root-in-disposable-windows-vm",
+  "checks": {
+    "baselineInstalled": true,
+    "realGitHubCheck": true,
+    "realDownloadCancelledAndRetryOffered": true,
+    "installerReplacedApplication": true,
+    "baselineExitedForInstall": true,
+    "autoRestartObserved": true,
+    "settingsPreserved": true,
+    "pluginAndLmdbAttachmentPreserved": true,
+    "dataRootAndInstallDirectoryPreserved": true,
+    "sameVersionNotOffered": true
+  },
+  "status": "passed",
+  "workflow": "https://github.com/Caicy/CAI.Tools/actions/runs/38847310150",
+  "validationCommit": "af7783f4f408295dc39269e60f33e54a962d34e0",
+  "baselineReleaseCommit": "05e6c9045e1e0e562cc4441700e6a46e576f5f5c",
+  "targetReleaseCommit": "1df160d6447c322d513925f4a56320989421b4a4",
+  "evidenceArtifactId": 12024116380
+}
