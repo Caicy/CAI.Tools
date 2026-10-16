@@ -1,6 +1,6 @@
 {
   "name": "CAI.Tools",
-  "version": "3.2.0-local.4",
+  "version": "3.2.0-local.5",
   "description": "CAI.Tools 本地工具箱",
   "main": "./out/main/index.js",
   "author": "ZToolsCenter",

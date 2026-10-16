@@ -158,6 +158,9 @@ async function launchInstalled(executable, dataRoot) {
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ZTOOLS_SETTING_DEV_SERVER_URL
   const application = await electron.launch({ executablePath: executable, env, timeout: 90000 })
+  // 保留实际安装版的进程输出，CI 启动失败时可定位原生模块或主进程错误。
+  application.process().stdout?.on('data', (chunk) => process.stdout.write(chunk))
+  application.process().stderr?.on('data', (chunk) => process.stderr.write(chunk))
   const page = await application.firstWindow()
   await page.locator('.search-input').waitFor({ state: 'visible', timeout: 90000 })
   assert.equal(await application.evaluate(({ app }) => app.isPackaged), true)
@@ -317,6 +320,13 @@ async function main() {
     application.process().once('exit', () => {
       baselineExited = true
     })
+    // 首次真实下载立即取消，确认应用仍停留在基线版本且能够重新开始下载。
+    await updateWindow.getByRole('button', { name: '下载并安装' }).click()
+    await updateWindow.getByRole('button', { name: '取消下载' }).click()
+    await updateWindow.getByRole('button', { name: '下载并安装' }).waitFor()
+    assert.equal(baselineExited, false)
+    assert.equal(await application.evaluate(({ app }) => app.getVersion()), baseline)
+    report.checks.realDownloadCancelledAndRetryOffered = true
     await updateWindow.getByRole('button', { name: '下载并安装' }).click()
     // 只观察真实安装包替换；不修改更新器、下载事件或安装 API。
     await waitFor(async () => {

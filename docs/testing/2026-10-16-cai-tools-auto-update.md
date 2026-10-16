@@ -51,7 +51,7 @@ E2E 使用临时数据根及旧数据目录，重启后回读宿主自动检查�
 
 ## 真实 Windows 升级验收（待执行）
 
-用户已于本任务授权公开发布。当前发布候选源码为 `3.2.0-local.4`，工作流会拒绝覆盖已存在的标签。计划发布 `3.2.0-local.4` 作为首次安装基线，再发布 `3.2.0-local.5` 验证升级；两版均须包含本次实现，且发布前分别更新 package.json 和工作流默认版本。B 版安装包不能仅修改远端 YAML 伪造版本。
+用户已于本任务授权公开发布。当前发布候选源码为 `3.2.0-local.5`，工作流会拒绝覆盖已存在的标签。计划发布 `3.2.0-local.4` 作为首次安装基线，再发布 `3.2.0-local.5` 验证升级；两版均须包含本次实现，且发布前分别更新 package.json 和工作流默认版本。B 版安装包不能仅修改远端 YAML 伪造版本。
 
 - [ ] 在独立 Windows 测试用户/虚拟机安装 A（local.4），记录安装目录、实际版本、设置、第三方插件及插件数据、宿主/插件 LMDB 文档与附件的摘要。
 - [ ] 核对 A 的 tag SHA、Actions SHA、release target_commitish 和制品摘要一致；确认最终资源包含自有 app-update.yml 与正确标记。
@@ -73,3 +73,10 @@ E2E 使用临时数据根及旧数据目录，重启后回读宿主自动检查�
 - 草稿上传失败时不会公开半成品；若已产生标签，重跑会因标签保护被拒绝，需要显式处理失败草稿/标签或增加版本，不能无审查覆盖已发布版本。
 
 参考：[electron-builder v26 自动更新](https://www.electron.build/v26/docs/features/auto-update/)、[通道说明](https://www.electron.build/docs/tutorials/release-using-channels/)、[action-gh-release 输出与草稿选项](https://github.com/softprops/action-gh-release#outputs)。实际版本选择同时以本地已安装依赖源码及测试为证据。
+
+## 已授权发布进度
+
+- local.4 已公开预发布：<https://github.com/Caicy/CAI.Tools/releases/tag/v3.2.0-local.4>。
+- 成功工作流：<https://github.com/Caicy/CAI.Tools/actions/runs/38843962804>；tag、工作流与 release target_commitish 均为 `05e6c9045e1e0e562cc4441700e6a46e576f5f5c`。五个更新制品完整，发布前校验实际安装包 SHA512、大小、自有源和身份通过。
+- 首次 CI 失败原因是缺失 Electron 安装结果及 RUNNER~1 临时路径别名；已通过显式准备 Electron 和规范临时目录修复，没有放宽产品路径边界。
+- local.5 候选在准备中；真实安装验收将使用 GitHub 临时 Windows runner，下载安装已发布的 local.4，在应用内真实下载取消、重试并升级到 local.5，再回读设置、插件文档与附件。不会重新打包应用来代替源码 E2E。
