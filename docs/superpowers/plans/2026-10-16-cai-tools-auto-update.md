@@ -61,3 +61,13 @@
 实现与源码验证已完成，详细结果见 `docs/testing/2026-10-16-cai-tools-auto-update.md`。
 
 - [ ] 经用户确认后发布两个启用更新的 local 版本，并执行真实 Windows NSIS A→B 现场验收；最终验收尚未通过。
+
+## 已授权的发布与安装验收阶段
+
+用户已授权提交、推送、发布 local.4 与 local.5。local.4 提交仅包含自动更新范围，现有 string-tools 工作区改动不纳入发布。
+
+- [ ] 通过现有 Windows Build 工作流发布 local.4，核对标签、源码 SHA、更新元数据与制品摘要。
+- [ ] 新增 `scripts/verify-windows-upgrade.cjs`：只允许 GitHub 托管的临时 Windows runner 执行，下载并校验已发布安装包，静默安装 A，使用真实安装版通过 GitHub 源下载和安装 B，再核对版本、安装目录、设置、插件文档与附件。此步骤是用户明确要求的已发布安装器验收，不用于代替源码 `pnpm test:e2e`，也不为此另行打包。
+- [ ] 扩展现有 `.github/workflows/build.yml` 增加 `validate_upgrade` 分支和独立安装验收 job，安装目录及数据根均位于 RUNNER_TEMP，原始 E2E 命令保持源码方式。
+- [ ] 发布 local.5 后触发验收 job，上传报告和必要截图；任何失败按真实结果修复并复验，不将模拟或文件版本变化当作完整安装成功。
+- [ ] 更新验证记录、公开发布链接及剩余风险。桌面 SmartScreen/企业策略人工验收独立记录，不由无人值守测试推断。

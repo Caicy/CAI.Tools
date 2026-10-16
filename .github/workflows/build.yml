@@ -15,6 +15,14 @@ on:
         description: '标记为试用版 Pre-release'
         type: boolean
         default: true
+      validate_upgrade:
+        description: '只验收已发布版本的真实 Windows 安装升级，不重新构建'
+        type: boolean
+        default: false
+      baseline_version:
+        description: '安装升级验收的首次安装版本'
+        required: false
+        default: '3.2.0-local.4'
 
 permissions:
   contents: write
@@ -28,7 +36,7 @@ jobs:
     name: Windows x64
     runs-on: windows-latest
     timeout-minutes: 40
-    if: github.repository == 'Caicy/CAI.Tools'
+    if: github.repository == 'Caicy/CAI.Tools' && !inputs.validate_upgrade
     steps:
       - name: Check out source and API types
         uses: actions/checkout@v4
@@ -81,6 +89,21 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare Electron and canonical Windows test paths
+        shell: pwsh
+        run: |
+          # Some hosted images expose TEMP through an 8.3 alias. Tests must use
+          # a physical path rather than relaxing the application's path boundary.
+          $physicalTemp = node -e "process.stdout.write(require('fs').realpathSync.native(process.env.RUNNER_TEMP))"
+          $testTemp = Join-Path $physicalTemp 'cai-tools-tests'
+          New-Item -ItemType Directory -Path $testTemp -Force | Out-Null
+          "TEMP=$testTemp" >> $env:GITHUB_ENV
+          "TMP=$testTemp" >> $env:GITHUB_ENV
+          # Ensure Node-based unit imports can locate Electron even if pnpm
+          # skipped its install hook; this uses the pinned dependency installer.
+          node node_modules/electron/install.js
+          if ($LASTEXITCODE -ne 0) { throw 'Electron runtime preparation failed.' }
 
       - name: Run unit and release-contract tests
         run: pnpm test
@@ -191,3 +214,47 @@ jobs:
               prerelease: true,
               make_latest: 'false'
             })
+
+  windows-upgrade:
+    name: Published Windows installer upgrade
+    if: github.repository == 'Caicy/CAI.Tools' && inputs.validate_upgrade
+    runs-on: windows-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Check out acceptance harness
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install acceptance dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prepare canonical acceptance temp path
+        shell: pwsh
+        run: |
+          $physicalTemp = node -e "process.stdout.write(require('fs').realpathSync.native(process.env.RUNNER_TEMP))"
+          "RUNNER_TEMP=$physicalTemp" >> $env:GITHUB_ENV
+          "TEMP=$physicalTemp" >> $env:GITHUB_ENV
+          "TMP=$physicalTemp" >> $env:GITHUB_ENV
+      - name: Install baseline and update through the application
+        shell: pwsh
+        env:
+          BASELINE_VERSION: ${{ inputs.baseline_version }}
+          TARGET_VERSION: ${{ inputs.version }}
+        run: node scripts/verify-windows-upgrade.cjs $env:BASELINE_VERSION $env:TARGET_VERSION
+      - name: Upload installation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CAI.Tools-windows-upgrade-evidence
+          if-no-files-found: warn
+          path: test-results/windows-upgrade/
