@@ -68,6 +68,6 @@
 
 - [ ] 通过现有 Windows Build 工作流发布 local.4，核对标签、源码 SHA、更新元数据与制品摘要。
 - [ ] 新增 `scripts/verify-windows-upgrade.cjs`：只允许 GitHub 托管的临时 Windows runner 执行，下载并校验已发布安装包，静默安装 A，使用真实安装版通过 GitHub 源下载和安装 B，再核对版本、安装目录、设置、插件文档与附件。此步骤是用户明确要求的已发布安装器验收，不用于代替源码 `pnpm test:e2e`，也不为此另行打包。
-- [ ] 扩展现有 `.github/workflows/build.yml` 增加 `validate_upgrade` 分支和独立安装验收 job，安装目录及数据根均位于 RUNNER_TEMP，原始 E2E 命令保持源码方式。
+- [x] 扩展现有 `.github/workflows/build.yml` 增加 `validate_upgrade` 分支和独立安装验收 job，安装目录位于 RUNNER_TEMP，数据根使用一次性 VM 内全新账户的默认 `~/.cai-tools`，明确拒绝既存数据。原始源码 E2E 命令保持临时目录隔离方式。
 - [ ] 发布 local.5 后触发验收 job，上传报告和必要截图；任何失败按真实结果修复并复验，不将模拟或文件版本变化当作完整安装成功。
 - [ ] 更新验证记录、公开发布链接及剩余风险。桌面 SmartScreen/企业策略人工验收独立记录，不由无人值守测试推断。

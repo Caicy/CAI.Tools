@@ -213,7 +213,9 @@ async function main() {
   const target = validateVersion(process.argv[3])
   assert.notEqual(baseline, target)
   const root = await fs.mkdtemp(path.join(runnerTemp, 'cai-tools-upgrade-'))
-  const dataRoot = path.join(root, 'data')
+  // 整台 GitHub VM 都是一次性的；使用全新测试账户的默认根验证正常安装路径。
+  // NSIS 经 Windows Shell 启动新版，不承诺继承调用测试进程的临时环境变量。
+  const dataRoot = path.join(os.homedir(), '.cai-tools')
   const legacyRoot = path.join(root, 'legacy')
   const installRoot = path.join(root, 'installed')
   const executable = path.join(installRoot, 'CAI.Tools.exe')
@@ -221,17 +223,25 @@ async function main() {
   await fs.mkdir(output, { recursive: true })
   await fs.mkdir(legacyRoot)
   await fs.writeFile(path.join(legacyRoot, 'sentinel'), 'untouched')
-  const defaultRoot = path.join(os.homedir(), '.cai-tools')
-  const defaultRootBefore = await fs.stat(defaultRoot).then(
+  const dataRootBefore = await fs.stat(dataRoot).then(
     () => true,
     () => false
   )
-  // 安装器和自动重启进程必须继承隔离目录，不能写入默认账户的数据根。
+  assert.equal(dataRootBefore, false, 'Fresh hosted VM profile must not contain CAI.Tools data')
+  // 使用一次性 VM 的全新默认根，Shell 重启即使不继承临时变量也解析到同一目录。
   process.env.ZTOOLS_DATA_ROOT = dataRoot
   process.env.ZTOOLS_LEGACY_USER_DATA_PATH = legacyRoot
   process.env.ZTOOLS_E2E = '1'
   delete process.env.ZTOOLS_SETTING_DEV_SERVER_URL
-  const report = { baseline, target, root, checks: {}, status: 'running' }
+  const report = {
+    baseline,
+    target,
+    root,
+    dataRoot,
+    profileMode: 'default-root-in-disposable-windows-vm',
+    checks: {},
+    status: 'running'
+  }
   let application
   try {
     const installer = await downloadInstaller(baseline, root)
@@ -369,13 +379,7 @@ async function main() {
     assert.deepEqual(restored.storage, { value: 'persisted' })
     assert.deepEqual(restored.bytes, [1, 2, 3, 255])
     assert.equal(await fs.readFile(path.join(legacyRoot, 'sentinel'), 'utf8'), 'untouched')
-    assert.equal(
-      await fs.stat(defaultRoot).then(
-        () => true,
-        () => false
-      ),
-      defaultRootBefore
-    )
+    assert.equal((await fs.stat(dataRoot)).isDirectory(), true)
     const rechecked = await upgraded.page.evaluate(() => window.ztools.updater.checkUpdate())
     assert.equal(rechecked.success, true)
     assert.equal(rechecked.hasUpdate, false)
