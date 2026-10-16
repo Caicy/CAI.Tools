@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { useCommandDataStore } from '../stores/commandDataStore'
 import { useWindowStore } from '../stores/windowStore'
+import { prioritizeStringToolMatches } from '@shared/stringToolsRecommendations'
 
 /**
  * 去重搜索结果，并合并同一个系统应用展开出的本地化名称与别名。
@@ -30,25 +31,37 @@ export function deduplicateResults<
 }
 
 /**
- * 根据使用统计对匹配指令结果排序（useCount 降序）
+ * 按使用次数排序，并保留字符串工具对当前文本的具体处理优先级。
+ * @param results 已匹配的命令。
+ * @param statsMap 以路径和功能代码为键的使用次数。
+ * @returns 排序后的命令，不修改原数组。
  */
-function sortByUsage<T extends { path: string; featureCode?: string }>(
-  results: T[],
-  statsMap: Map<string, number>
-): T[] {
-  if (statsMap.size === 0) return results
-  return [...results].sort((a, b) => {
+function sortByUsage<
+  T extends {
+    path: string
+    featureCode?: string
+    pluginName?: string
+    cmdType?: string
+    matchCmd?: { type?: string }
+  }
+>(results: T[], statsMap: Map<string, number>): T[] {
+  // 使用统计仍决定其他插件的顺序；字符串工具只在自己的位置内细排。
+  if (statsMap.size === 0) return prioritizeStringToolMatches(results)
+  const sorted = [...results].sort((a, b) => {
     const keyA = `${a.path}:${a.featureCode || ''}`
     const keyB = `${b.path}:${b.featureCode || ''}`
     const countA = statsMap.get(keyA) || 0
     const countB = statsMap.get(keyB) || 0
     return countB - countA
   })
+  return prioritizeStringToolMatches(sorted)
 }
 
 /**
  * 搜索结果计算 Composable
  * 统一管理所有搜索结果的计算逻辑
+ * @param props 搜索词及本次粘贴的文本、文件或图片上下文。
+ * @returns 主动搜索、特征匹配、通用推荐及合并列表的响应式结果。
  */
 export function useSearchResults(props: {
   searchQuery: string
@@ -268,7 +281,7 @@ export function useSearchResults(props: {
     if (!query) return deduped
 
     // 排序：完全匹配 > 前缀匹配 > 系统应用 > 其他
-    return deduped.sort((a, b) => {
+    const sorted = deduped.sort((a, b) => {
       const nameA = a.name.toLowerCase()
       const nameB = b.name.toLowerCase()
 
@@ -297,6 +310,7 @@ export function useSearchResults(props: {
       const countB = usageStatsMap.value.get(keyB) || 0
       return countB - countA
     })
+    return prioritizeStringToolMatches(sorted)
   })
 
   return {

@@ -1,8 +1,8 @@
 {
   "name": "string-tools",
   "title": "字符串处理",
-  "version": "1.0.0",
-  "description": "SQL IN 拼接、大小写与命名转换、Unicode 编解码和行整理，完全离线运行",
+  "version": "1.2.0",
+  "description": "SQL IN 与自定义拼接、查找替换、命名转换、Unicode 编解码及行排序筛选，完全离线运行",
   "author": "CAI.Tools",
   "main": "index.html",
   "preload": "preload.js",
@@ -18,24 +18,79 @@
         "多行转逗号",
         "字符串工具",
         "string tools",
-        { "type": "over", "label": "字符串处理" }
+        {
+          "type": "over",
+          "label": "字符串处理"
+        },
+        {
+          "type": "regex",
+          "label": "SQL IN 拼接",
+          "match": "/^\\s*\\S[^\\r\\n\\t]*[\\r\\n\\t][\\s\\S]*\\S/",
+          "minLength": 1
+        }
       ]
     },
     {
       "code": "case",
       "explain": "字符串处理 · 大小写与命名",
-      "cmds": ["大小写转换", "驼峰转换", "命名转换"]
+      "cmds": [
+        "大小写转换",
+        "驼峰转换",
+        "命名转换",
+        {
+          "type": "regex",
+          "label": "大小写与命名",
+          "match": "/^(?![\\s\\S]*(?:\\\\[uU](?:[0-9a-cA-Ce-fE-F][0-9a-fA-F]{3}|[dD][0-7][0-9a-fA-F]{2}|[dD][89aAbB][0-9a-fA-F]{2}\\\\[uU][dD][c-fC-F][0-9a-fA-F]{2})|\\\\[uU]\\{(?!0{0,2}[dD][89a-fA-F][0-9a-fA-F]{2}\\})(?:[0-9a-fA-F]{1,5}|0[0-9a-fA-F]{5}|10[0-9a-fA-F]{4})\\}|\\b[Uu]\\+(?!0{0,2}[dD][89a-fA-F][0-9a-fA-F]{2}\\b)(?:[0-9a-fA-F]{4,5}|0[0-9a-fA-F]{5}|10[0-9a-fA-F]{4})\\b))(?=[\\s\\S]*[a-zA-Z])[\\x00-\\x7f]+$/",
+          "minLength": 1
+        }
+      ]
     },
     {
       "code": "unicode",
       "explain": "字符串处理 · Unicode 编解码",
-      "cmds": ["Unicode转中文", "Unicode转换"]
+      "cmds": [
+        "Unicode转中文",
+        "Unicode转换",
+        {
+          "type": "regex",
+          "label": "Unicode 解码",
+          "match": "/(?:\\\\[uU](?:[0-9a-cA-Ce-fE-F][0-9a-fA-F]{3}|[dD][0-7][0-9a-fA-F]{2}|[dD][89aAbB][0-9a-fA-F]{2}\\\\[uU][dD][c-fC-F][0-9a-fA-F]{2})|\\\\[uU]\\{(?!0{0,2}[dD][89a-fA-F][0-9a-fA-F]{2}\\})(?:[0-9a-fA-F]{1,5}|0[0-9a-fA-F]{5}|10[0-9a-fA-F]{4})\\}|\\b[Uu]\\+(?!0{0,2}[dD][89a-fA-F][0-9a-fA-F]{2}\\b)(?:[0-9a-fA-F]{4,5}|0[0-9a-fA-F]{5}|10[0-9a-fA-F]{4})\\b)/",
+          "minLength": 1
+        }
+      ]
     },
     {
       "code": "unicode-encode",
       "explain": "字符串处理 · 中文转 Unicode",
       "cmds": ["中文转Unicode"]
     },
-    { "code": "lines", "explain": "字符串处理 · 行整理", "cmds": ["文本去重", "去空行", "行整理"] }
+    {
+      "code": "lines",
+      "explain": "字符串处理 · 行整理",
+      "cmds": [
+        "文本去重",
+        "去空行",
+        "行整理",
+        "行排序",
+        "行筛选",
+        "自然排序",
+        {
+          "type": "regex",
+          "label": "行整理",
+          "match": "/^\\s*\\S[^\\r\\n]*[\\r\\n][\\s\\S]*\\S/",
+          "minLength": 1
+        }
+      ]
+    },
+    {
+      "code": "join",
+      "explain": "字符串处理 · 自定义拼接",
+      "cmds": ["自定义拼接", "文本拼接", "分隔符转换", "批量前后缀"]
+    },
+    {
+      "code": "replace",
+      "explain": "字符串处理 · 查找替换",
+      "cmds": ["查找替换", "文本替换", "正则替换"]
+    }
   ]
 }

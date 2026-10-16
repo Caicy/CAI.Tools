@@ -154,3 +154,158 @@ export function encodeUnicode(text) {
     (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`
   )
 }
+
+/**
+ * 仅解释分隔符中约定的排版转义，未知转义保持原样。
+ * @param {string} value 分隔符输入。
+ * @returns {string} 可用于字面拆分或拼接的分隔符。
+ */
+function decodeSeparator(value) {
+  const escapes = { n: '\n', r: '\r', t: '\t', '\\': '\\' }
+  return value.replace(/\\([nrt\\])/g, (_match, character) => escapes[character])
+}
+
+/**
+ * 按指定字面分隔符拆项、清理并为每项添加前后缀后拼接。
+ * @param {string} text 原始文本。
+ * @param {{input?: string, delimiter?: string, separator?: string, prefix?: string, suffix?: string, trim?: boolean, unique?: boolean}} options 拼接与清理选项。
+ * @returns {{output: string, count: number, empty: number, duplicates: number}} 输出及清理统计。
+ * @throws {Error} 输入分隔方式无效或自定义输入分隔符为空。
+ */
+export function joinText(text, options = {}) {
+  // 自定义分隔符按字面匹配，避免把用户输入误当正则。
+  const input = options.input || 'newline'
+  const delimiters = { newline: /\r\n|[\r\n]/, comma: ',', semicolon: ';', tab: '\t' }
+  let delimiter
+  if (input === 'custom') {
+    delimiter = decodeSeparator(options.delimiter ?? '')
+    if (!delimiter) throw new Error('自定义输入分隔符不能为空')
+  } else {
+    if (!Object.hasOwn(delimiters, input)) throw new Error('不支持的输入分隔方式')
+    delimiter = delimiters[input]
+  }
+  const values = []
+  const seen = new Set()
+  let empty = 0
+  let duplicates = 0
+  for (const item of text === '' ? [] : text.split(delimiter)) {
+    const value = options.trim === false ? item : item.trim()
+    if (!value.trim()) {
+      empty++
+      continue
+    }
+    if (options.unique && seen.has(value)) {
+      duplicates++
+      continue
+    }
+    seen.add(value)
+    values.push(`${options.prefix ?? ''}${value}${options.suffix ?? ''}`)
+  }
+  // 仅分隔符解释排版转义，前后缀中的反斜杠和美元符号保持原文。
+  return {
+    output: values.join(decodeSeparator(options.separator ?? ',')),
+    count: values.length,
+    empty,
+    duplicates
+  }
+}
+
+/**
+ * 执行普通字面替换或正则替换，空查找不改变输入。
+ * @param {string} text 原始文本。
+ * @param {{search?: string, replacement?: string, regex?: boolean, all?: boolean, ignoreCase?: boolean, multiline?: boolean}} options 查找及替换选项。
+ * @returns {string} 替换后的完整文本。
+ * @throws {Error} 正则表达式无效。
+ */
+export function replaceText(text, options = {}) {
+  const search = options.search ?? ''
+  const replacement = options.replacement ?? ''
+  if (!search) return text
+  // 普通模式转义所有正则元字符，替换回调避免解释 $1、$& 等占位符。
+  const pattern = options.regex ? search : search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const flags = `${options.all === false ? '' : 'g'}${options.ignoreCase ? 'i' : ''}${options.multiline ? 'm' : ''}`
+  let expression
+  try {
+    expression = new RegExp(pattern, flags)
+  } catch {
+    throw new Error('正则表达式无效，请检查括号、转义和字符范围')
+  }
+  return text.replace(expression, options.regex ? replacement : () => replacement)
+}
+
+/**
+ * 拆解十进制文本供精确排序，长 ID 和小数不经过浮点数转换。
+ * @param {string} value 原始行文本。
+ * @returns {{negative: boolean, integer: string, fraction: string}} 规范化数值部分。
+ * @throws {Error} 不是普通十进制数字。
+ */
+function decimalParts(value) {
+  const text = value.trim()
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) {
+    throw new Error('数字排序仅支持普通十进制数字，请检查非数字行或改用自然排序')
+  }
+  const [whole, decimal = ''] = text.replace(/^[+-]/, '').split('.')
+  const integer = whole.replace(/^0+/, '') || '0'
+  const fraction = decimal.replace(/0+$/, '')
+  return {
+    negative: text.startsWith('-') && (integer !== '0' || fraction !== ''),
+    integer,
+    fraction
+  }
+}
+
+/**
+ * 比较已规范化的十进制数，零与相等数值保持稳定顺序。
+ * @param {{negative: boolean, integer: string, fraction: string}} left 左侧数值。
+ * @param {{negative: boolean, integer: string, fraction: string}} right 右侧数值。
+ * @returns {number} 负值、零或正值表示大小关系。
+ */
+function compareDecimals(left, right) {
+  if (left.negative !== right.negative) return left.negative ? -1 : 1
+  const size = left.integer.length - right.integer.length
+  const integer = left.integer < right.integer ? -1 : left.integer > right.integer ? 1 : 0
+  // 尾随零已经移除，小数字符串的字典顺序等价于补零后的数值顺序。
+  const fraction = left.fraction < right.fraction ? -1 : left.fraction > right.fraction ? 1 : 0
+  return (left.negative ? -1 : 1) * (size || integer || fraction)
+}
+
+/**
+ * 清理行后应用关键词筛选和排序，最终可将结果倒序。
+ * @param {string} text 原始多行文本。
+ * @param {{trim?: boolean, unique?: boolean, keyword?: string, filter?: string, ignoreCase?: boolean, sort?: string, reverse?: boolean}} options 清理、字面筛选和排序选项。
+ * @returns {{values: string[], total: number, empty: number, duplicates: number, filtered: number}} 最终行及各阶段统计。
+ * @throws {Error} 排序／筛选方式无效或数字排序包含非十进制行。
+ */
+export function organizeLines(text, options = {}) {
+  const sort = options.sort || 'original'
+  const filter = options.filter || 'include'
+  if (!['original', 'text', 'number', 'natural'].includes(sort)) throw new Error('不支持的排序方式')
+  if (!['include', 'exclude'].includes(filter)) throw new Error('不支持的筛选方式')
+  const cleaned = cleanLines(text, options)
+  const keyword = options.keyword ?? ''
+  const needle = options.ignoreCase ? keyword.toLowerCase() : keyword
+  let values = cleaned.values
+  // 空关键词不筛选；关键词按字面包含匹配，独立于去重的大小写规则。
+  if (keyword) {
+    values = values.filter((value) => {
+      const haystack = options.ignoreCase ? value.toLowerCase() : value
+      const matches = haystack.includes(needle)
+      return filter === 'exclude' ? !matches : matches
+    })
+  }
+  const filtered = cleaned.values.length - values.length
+  if (sort === 'number') {
+    // 先校验全部保留行，再排序，只有完整成功才发布结果。
+    values = values
+      .map((value) => ({ value, parts: decimalParts(value) }))
+      .sort((left, right) => compareDecimals(left.parts, right.parts))
+      .map((item) => item.value)
+  } else if (sort === 'natural') {
+    const collator = new Intl.Collator('zh-CN', { numeric: true })
+    values.sort(collator.compare)
+  } else if (sort === 'text') {
+    values.sort()
+  }
+  if (options.reverse) values.reverse()
+  return { ...cleaned, values, filtered }
+}

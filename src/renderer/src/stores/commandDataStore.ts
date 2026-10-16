@@ -1,4 +1,5 @@
 import Fuse from 'fuse.js'
+import { prioritizeStringToolMatches } from '@shared/stringToolsRecommendations'
 import { defineStore } from 'pinia'
 import { pinyin } from 'pinyin-pro'
 import { ref } from 'vue'
@@ -1360,7 +1361,12 @@ export const useCommandDataStore = defineStore('commandData', () => {
     return _calculateMatchScore(text, query, matches, command)
   }
 
-  // 搜索
+  /**
+   * 搜索主动指令及文本匹配指令，为主窗口和超级面板提供一致结果。
+   * @param query 搜索词或待匹配的完整文本。
+   * @param commandList 可选的二次筛选命令范围。
+   * @returns 模糊匹配及已排序的上下文匹配命令。
+   */
   function search(
     query: string,
     commandList?: SearchResult[]
@@ -1473,9 +1479,9 @@ export const useCommandDataStore = defineStore('commandData', () => {
 
     // 应用特殊指令配置（确保图标等属性正确）
     const processedBestMatches = bestMatches.filter((cmd) => !isCommandDisabled(cmd))
-    const processedRegexMatches = regexMatches
-      .filter((cmd) => !isCommandDisabled(cmd))
-      .map((cmd) => applySpecialConfig(cmd))
+    const processedRegexMatches = prioritizeStringToolMatches(
+      regexMatches.filter((cmd) => !isCommandDisabled(cmd)).map((cmd) => applySpecialConfig(cmd))
+    )
 
     // 如果指定了搜索范围（用于粘贴内容的二次搜索），不需要 regexMatches
     if (commandList) {
@@ -1495,7 +1501,11 @@ export const useCommandDataStore = defineStore('commandData', () => {
     return result.map((cmd) => applySpecialConfig(cmd))
   }
 
-  // 搜索支持文本的指令（根据文本长度过滤）
+  /**
+   * 匹配文本上下文中的指令，并按字符串工具适用性排列其自身入口。
+   * @param pastedText 本次粘贴或选中的完整原文。
+   * @returns 已过滤禁用项、应用特殊配置的文本指令。
+   */
   function searchTextCommands(pastedText?: string): SearchResult[] {
     if (!pastedText) {
       return []
@@ -1518,7 +1528,9 @@ export const useCommandDataStore = defineStore('commandData', () => {
     })
 
     // 应用特殊指令配置，过滤禁用指令
-    return result.filter((cmd) => !isCommandDisabled(cmd)).map((cmd) => applySpecialConfig(cmd))
+    return prioritizeStringToolMatches(
+      result.filter((cmd) => !isCommandDisabled(cmd)).map((cmd) => applySpecialConfig(cmd))
+    )
   }
 
   // 搜索支持文件的指令（根据配置属性过滤）

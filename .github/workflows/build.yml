@@ -6,7 +6,7 @@ on:
       version:
         description: '试用版本号（须与此分支 package.json 一致）'
         required: true
-        default: '3.2.0-local.5'
+        default: '3.2.0-local.6'
       publish_release:
         description: '发布 Windows 安装包和 ZIP 到 GitHub Release'
         type: boolean

@@ -1,5 +1,77 @@
 import { describe, it, expect } from 'vitest'
 import { deduplicateResults } from '../../src/renderer/src/composables/useSearchResults'
+import { prioritizeStringToolMatches } from '../../src/shared/stringToolsRecommendations'
+
+describe('字符串工具匹配优先级', () => {
+  const base = { path: '/plugins/string-tools', pluginName: 'string-tools', cmdType: 'regex' }
+
+  it('覆盖使用次数排序后的输入顺序，解码优先且不会修改原数组', () => {
+    const results = ['case', 'lines', 'sql', 'unicode'].map((featureCode) => ({
+      ...base,
+      featureCode
+    }))
+    expect(prioritizeStringToolMatches(results).map((item) => item.featureCode)).toEqual([
+      'unicode',
+      'sql',
+      'lines',
+      'case'
+    ])
+    expect(results.map((item) => item.featureCode)).toEqual(['case', 'lines', 'sql', 'unicode'])
+  })
+
+  it('其他插件位置及同一工具的别名顺序保持不变', () => {
+    const foreign = {
+      path: '/other',
+      pluginName: 'other',
+      featureCode: 'unicode',
+      cmdType: 'regex'
+    }
+    const results = [
+      { ...base, featureCode: 'case', name: 'name' },
+      foreign,
+      { ...base, featureCode: 'unicode', name: 'decode' },
+      { ...base, featureCode: 'unicode', name: 'alias' }
+    ]
+    const sorted = prioritizeStringToolMatches(results)
+    expect(sorted[1]).toBe(foreign)
+    expect(sorted.map((item) => ('name' in item ? item.name : 'foreign'))).toEqual([
+      'decode',
+      'foreign',
+      'alias',
+      'name'
+    ])
+  })
+
+  it('通用入口位于具体匹配之后，去重时保留 SQL 的具体入口', () => {
+    const results = [
+      { ...base, featureCode: 'sql', cmdType: 'over', name: '字符串处理', type: 'plugin' },
+      { ...base, featureCode: 'lines', name: '行整理', type: 'plugin' },
+      { ...base, featureCode: 'sql', name: 'SQL IN 拼接', type: 'plugin' }
+    ]
+    expect(
+      deduplicateResults(prioritizeStringToolMatches(results)).map((item) => item.name)
+    ).toEqual(['SQL IN 拼接', '行整理'])
+  })
+
+  it('手动搜索入口不受匹配优先级影响', () => {
+    const results = [
+      { ...base, featureCode: 'case', cmdType: 'text' },
+      { ...base, featureCode: 'unicode', cmdType: 'text' }
+    ]
+    expect(prioritizeStringToolMatches(results)).toEqual(results)
+  })
+
+  it('开发插件和正式插件独立排序', () => {
+    const dev = { ...base, path: '/dev', pluginName: 'string-tools__dev', featureCode: 'unicode' }
+    const results = [{ ...base, featureCode: 'case' }, dev, { ...base, featureCode: 'sql' }]
+    expect(prioritizeStringToolMatches(results)[1]).toBe(dev)
+    expect(prioritizeStringToolMatches(results).map((item) => item.featureCode)).toEqual([
+      'sql',
+      'unicode',
+      'case'
+    ])
+  })
+})
 
 describe('deduplicateResults', () => {
   describe('非插件类型', () => {

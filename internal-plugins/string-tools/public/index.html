@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
+      content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
     />
     <title>字符串处理</title>
     <link rel="stylesheet" href="style.css" />
@@ -13,30 +13,59 @@
   <body>
     <main>
       <header>
-        <div>
-          <span class="eyebrow">TEXT WORKBENCH</span>
-          <h1>字符串处理<span class="local">本地处理</span></h1>
-        </div>
-        <button id="clear" class="quiet">清空</button>
+        <span class="brand-mark" aria-hidden="true">Aa</span>
+        <h1>字符串处理</h1>
+        <span class="local">本地 · 离线</span>
       </header>
       <nav aria-label="处理工具">
         <button data-tab="sql" aria-pressed="true">SQL IN 拼接</button
         ><button data-tab="case" aria-pressed="false">大小写与命名</button
         ><button data-tab="unicode" aria-pressed="false">Unicode</button
-        ><button data-tab="lines" aria-pressed="false">行整理</button>
+        ><button data-tab="lines" aria-pressed="false">行整理</button
+        ><button data-tab="join" aria-pressed="false">自定义拼接</button
+        ><button data-tab="replace" aria-pressed="false">查找替换</button>
       </nav>
       <section class="options" aria-label="处理选项">
         <div data-options="sql">
-          <label
-            >值类型
-            <select id="sql-mode">
+          <div class="control-row">
+            <span class="option-label">值类型</span>
+            <div class="segments" role="group" aria-label="SQL 值类型">
+              <button
+                type="button"
+                data-mode-select="sql-mode"
+                data-mode-value="auto"
+                aria-pressed="true"
+              >
+                自动识别
+              </button>
+              <button
+                type="button"
+                data-mode-select="sql-mode"
+                data-mode-value="text"
+                aria-pressed="false"
+              >
+                全部文本
+              </button>
+              <button
+                type="button"
+                data-mode-select="sql-mode"
+                data-mode-value="number"
+                aria-pressed="false"
+              >
+                全部数字
+              </button>
+            </div>
+            <select id="sql-mode" aria-label="SQL 值类型" hidden>
               <option value="auto">自动识别</option>
               <option value="text">全部文本</option>
               <option value="number">全部数字</option>
-            </select></label
-          ><label><input id="sql-wrap" type="checkbox" />带括号 ( )</label
-          ><label><input id="sql-trim" type="checkbox" checked />去首尾空格</label
-          ><label><input id="sql-unique" type="checkbox" checked />去重</label>
+            </select>
+          </div>
+          <div class="control-row">
+            <label><input id="sql-trim" type="checkbox" checked />去首尾空格</label>
+            <label><input id="sql-unique" type="checkbox" checked />去重</label>
+            <label><input id="sql-wrap" type="checkbox" />带括号 ( )</label>
+          </div>
         </div>
         <div data-options="case" hidden>
           <label
@@ -52,25 +81,106 @@
           ><span class="subtle">每行独立转换</span>
         </div>
         <div data-options="unicode" hidden>
-          <label
-            >转换方向
-            <select id="unicode-mode">
-              <option value="decode">Unicode → 中文 / 文本</option>
-              <option value="encode">中文 / 文本 → Unicode</option>
-            </select></label
-          >
+          <div class="segments" role="group" aria-label="Unicode 转换方向">
+            <button
+              type="button"
+              data-mode-select="unicode-mode"
+              data-mode-value="decode"
+              aria-pressed="true"
+            >
+              Unicode → 文本
+            </button>
+            <button
+              type="button"
+              data-mode-select="unicode-mode"
+              data-mode-value="encode"
+              aria-pressed="false"
+            >
+              文本 → Unicode
+            </button>
+          </div>
+          <select id="unicode-mode" aria-label="Unicode 转换方向" hidden>
+            <option value="decode">Unicode → 中文 / 文本</option>
+            <option value="encode">中文 / 文本 → Unicode</option>
+          </select>
         </div>
         <div data-options="lines" hidden>
           <label><input id="lines-trim" type="checkbox" checked />去首尾空格</label
           ><label><input id="lines-unique" type="checkbox" checked />去重</label
-          ><span class="subtle">忽略空行 · 保持原顺序</span>
+          ><label
+            >排序<select id="lines-sort">
+              <option value="original">保持原顺序</option>
+              <option value="text">文本排序</option>
+              <option value="number">数字排序</option>
+              <option value="natural">自然排序</option>
+            </select></label
+          ><label><input id="lines-reverse" type="checkbox" />倒序</label>
+          <details>
+            <summary>筛选选项</summary>
+            <div class="control-row">
+              <label>关键词<input id="lines-keyword" type="text" placeholder="空则不筛选" /></label>
+              <label
+                >筛选<select id="lines-filter">
+                  <option value="include">保留包含关键词的行</option>
+                  <option value="exclude">排除包含关键词的行</option>
+                </select></label
+              >
+              <label><input id="lines-ignore-case" type="checkbox" />筛选忽略大小写</label>
+            </div>
+          </details>
+        </div>
+        <div data-options="join" hidden>
+          <label
+            >输入分隔<select id="join-input">
+              <option value="newline">换行</option>
+              <option value="comma">逗号 ,</option>
+              <option value="semicolon">分号 ;</option>
+              <option value="tab">制表符 Tab</option>
+              <option value="custom">自定义</option>
+            </select></label
+          >
+          <label id="join-custom-field" hidden
+            >输入分隔符<input id="join-custom" type="text" placeholder="如 | 或 \n"
+          /></label>
+          <label
+            >输出分隔符<input
+              id="join-separator"
+              type="text"
+              value=","
+              placeholder="可留空，如 , 或 \n"
+          /></label>
+          <label>每项前缀<input id="join-prefix" type="text" placeholder="如 [ 或单引号" /></label>
+          <label>每项后缀<input id="join-suffix" type="text" placeholder="如 ] 或单引号" /></label>
+          <label><input id="join-trim" type="checkbox" checked />去首尾空格</label>
+          <label><input id="join-unique" type="checkbox" />去重</label>
+        </div>
+        <div data-options="replace" hidden>
+          <label class="wide-field"
+            >查找<input id="replace-search" type="text" placeholder="查找文本或正则表达式"
+          /></label>
+          <label class="wide-field"
+            >替换为<input id="replace-value" type="text" placeholder="留空可删除匹配内容"
+          /></label>
+          <details>
+            <summary>高级设置</summary>
+            <div class="control-row">
+              <label><input id="replace-regex" type="checkbox" />正则表达式</label>
+              <label><input id="replace-all" type="checkbox" checked />替换全部</label>
+              <label><input id="replace-ignore-case" type="checkbox" />忽略大小写</label>
+              <label><input id="replace-multiline" type="checkbox" disabled />多行锚点 ^ $</label>
+            </div>
+          </details>
         </div>
       </section>
       <p id="hint" class="hint"></p>
-      <section class="editors">
+      <section class="editors" aria-label="文本输入与结果">
         <div class="editor">
           <div class="editor-heading">
-            <label for="source">原始文本</label><button id="paste" class="quiet">读取剪贴板</button>
+            <label for="source">原始文本</label>
+            <div class="editor-actions">
+              <button id="paste" class="quiet">读取剪贴板</button>
+              <button id="clear" class="quiet">清空</button>
+            </div>
           </div>
           <textarea
             id="source"
@@ -81,7 +191,8 @@
         </div>
         <div class="editor result">
           <div class="editor-heading">
-            <label for="output">处理结果</label><span class="live">实时预览</span>
+            <label for="output">处理结果</label>
+            <button id="copy" class="primary" disabled>复制结果</button>
           </div>
           <textarea
             id="output"
@@ -90,12 +201,12 @@
             wrap="off"
             placeholder="处理结果将在这里显示"
           ></textarea>
-          <div id="result-count" class="count">等待输入</div>
+          <div id="result-count" class="count" aria-live="polite">等待输入</div>
         </div>
       </section>
       <footer>
         <p id="status" role="status" aria-live="polite">内容仅在本机处理，不保存历史。</p>
-        <button id="copy" class="primary" disabled>复制结果 <kbd>Ctrl ↵</kbd></button>
+        <span class="shortcut"><kbd>Ctrl / ⌘ + Enter</kbd> 复制结果</span>
       </footer>
     </main>
     <script type="module" src="app.mjs"></script>
