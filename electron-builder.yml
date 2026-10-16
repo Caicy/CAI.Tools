@@ -1,6 +1,11 @@
 appId: tools.cai.local
 productName: CAI.Tools
-publish: null
+publish:
+  provider: github
+  owner: Caicy
+  repo: CAI.Tools
+  channel: local
+  releaseType: prerelease
 directories:
   buildResources: build
 files:

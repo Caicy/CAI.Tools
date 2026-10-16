@@ -54,6 +54,7 @@ export interface PlatformUpdaterCallbacks {
   onDownloaded: (info: PlatformUpdateInfo, showWindow: boolean) => void
   onDownloadFailed: (error: string) => void
   onBeforeInstall: () => void
+  onInstallFailed?: () => void
 }
 
 export interface PlatformUpdaterService {

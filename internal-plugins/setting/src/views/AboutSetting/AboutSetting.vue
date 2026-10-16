@@ -1,25 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useToast } from '@/components'
 import { GITHUB_REPOSITORY_URL } from '@shared/updateSource'
-import type { LocalEditionInfo, UpstreamNotice } from '@shared/localEdition'
+import type { LocalEditionInfo } from '@shared/localEdition'
 
 const { error } = useToast()
 const appVersion = ref('')
 const localEdition = ref<LocalEditionInfo | null>(null)
 const isCheckingUpdate = ref(false)
-const isOpeningRelease = ref(false)
-const upstreamNotice = ref<UpstreamNotice | null>(null)
+const autoCheckUpdate = ref(true)
+const updateMessage = ref('仅接收 Caicy/CAI.Tools 的 local 预发布版本。')
 const currentYear = new Date().getFullYear()
-const noticeText = computed(() => {
-  const notice = upstreamNotice.value
-  if (!notice) return '点击检查上游版本，查看 ZTools 稳定版发布信息。'
-  if (notice.kind === 'available')
-    return `上游有新版本 v${notice.version}，需合并源码并重新构建 CAI.Tools。`
-  if (notice.kind === 'up-to-date')
-    return `上游基线已是最新稳定版（v${notice.version || localEdition.value?.upstreamBase || '未知'}）。`
-  return notice.message || '暂时无法检查上游版本，请稍后重试。'
-})
 
 /**
  * 读取本机构建版本和能力信息，挂载时只访问本地状态。
@@ -27,13 +18,15 @@ const noticeText = computed(() => {
  */
 async function loadLocalEdition(): Promise<void> {
   try {
-    // 此处只读取本机信息；上游检查必须由用户点击发起。
+    // 此处只读取本机信息，不触发网络检查。
     const [version, info] = await Promise.all([
       window.ztools.internal.getAppVersion(),
       window.ztools.internal.getLocalEditionInfo()
     ])
     appVersion.value = version
     localEdition.value = info
+    const settings = await window.ztools.internal.dbGet('settings-general')
+    autoCheckUpdate.value = settings?.autoCheckUpdate !== false
   } catch (cause) {
     console.error('读取本地版本信息失败:', cause)
     appVersion.value = '未知'
@@ -42,41 +35,49 @@ async function loadLocalEdition(): Promise<void> {
 }
 
 /**
- * 按用户操作获取上游稳定版本提醒。
- * @returns 检查完成后结束的 Promise。
+ * 检查自有版本并由宿主显示下载与安装窗口。
+ * @returns 检查结束后的 Promise。
  */
 async function handleCheckUpdate(): Promise<void> {
   if (isCheckingUpdate.value) return
-  // 清除旧提醒，防止检查失败后继续展示过期发布页。
   isCheckingUpdate.value = true
-  upstreamNotice.value = null
+  updateMessage.value = '正在检查 CAI.Tools 更新…'
   try {
-    upstreamNotice.value = await window.ztools.internal.checkUpstreamUpdate()
+    // 使用内部权限入口，版本来源与安装目标由主进程决定。
+    const result = await window.ztools.internal.updaterCheckUpdate()
+    if (result.error) updateMessage.value = '检查失败：' + result.error
+    else if (result.migrationRequired)
+      updateMessage.value = '当前安装不具备自动更新条件，请先安装一次启用更新的完整版本。'
+    else
+      updateMessage.value = result.hasUpdate
+        ? '发现 CAI.Tools v' + result.latestVersion + '，请在更新窗口中下载并安装。'
+        : '当前已是最新的 CAI.Tools local 版本。'
   } catch (cause) {
-    console.error('检查上游版本失败:', cause)
-    upstreamNotice.value = { kind: 'unavailable', message: '暂时无法检查上游版本，请稍后重试。' }
+    updateMessage.value = '检查更新失败，请检查网络后重试。'
+    console.error('检查 CAI.Tools 更新失败:', cause)
   } finally {
     isCheckingUpdate.value = false
   }
 }
 
 /**
- * 请求主进程再次校验提醒中的地址后打开上游发布页。
- * @returns 发布页打开请求完成后结束的 Promise。
+ * 保存自动检查偏好并同步宿主定时器。
+ * @returns 设置保存后的 Promise。
  */
-async function openUpstreamRelease(): Promise<void> {
-  const notice = upstreamNotice.value
-  if (isOpeningRelease.value || notice?.kind !== 'available' || !notice.releaseUrl) return
-  isOpeningRelease.value = true
+async function changeAutoCheck(): Promise<void> {
   try {
-    // 远端发布地址必须经专用 IPC 白名单校验，不能直接交给通用外链接口。
-    const result = await window.ztools.internal.openUpstreamRelease(notice.releaseUrl)
-    if (!result.success) error(result.error || '无法打开上游发布页')
+    // 合并现有文档，避免覆盖主题、快捷键等其他偏好。
+    const old = await window.ztools.internal.dbGet('settings-general')
+    const saved = await window.ztools.internal.dbPut('settings-general', {
+      ...(old || {}),
+      autoCheckUpdate: autoCheckUpdate.value
+    })
+    if (!saved.ok) throw new Error(saved.error || '设置写入失败')
+    const applied = await window.ztools.internal.updaterSetAutoCheck(autoCheckUpdate.value)
+    if (!applied.success) throw new Error(applied.error || '开关应用失败')
   } catch (cause) {
-    console.error('打开上游发布页失败:', cause)
-    error('无法打开上游发布页')
-  } finally {
-    isOpeningRelease.value = false
+    error('保存自动检查设置失败')
+    console.error(cause)
   }
 }
 
@@ -89,7 +90,7 @@ function openQQGroup(): void {
 }
 
 /**
- * 打开上游项目的源代码仓库。
+ * 打开 CAI.Tools 自有源代码仓库。
  * @returns 无返回值。
  */
 function openGithub(): void {
@@ -205,7 +206,7 @@ onMounted(loadLocalEdition)
               />
             </svg>
           </div>
-          <div class="card-label">上游源码</div>
+          <div class="card-label">CAI.Tools 源码</div>
           <div class="card-value">
             查看代码
             <svg class="external-icon" width="12" height="12" viewBox="0 0 24 24" fill="none">
@@ -328,20 +329,18 @@ onMounted(loadLocalEdition)
             stroke-linecap="round"
           />
         </svg>
-        {{ isCheckingUpdate ? '检查中...' : '检查上游版本' }}
+        {{ isCheckingUpdate ? '检查中...' : '检查 CAI.Tools 更新' }}
       </button>
 
       <div class="upstream-notice" role="status" aria-live="polite">
-        <p>{{ isCheckingUpdate ? '正在获取上游稳定版信息…' : noticeText }}</p>
-        <p class="upstream-notice-hint">上游新版需合并源码并重新构建本地版本。</p>
-        <button
-          v-if="upstreamNotice?.kind === 'available' && upstreamNotice.releaseUrl"
-          class="btn"
-          :disabled="isOpeningRelease || isCheckingUpdate"
-          @click="openUpstreamRelease"
+        <p>{{ updateMessage }}</p>
+        <p class="upstream-notice-hint">
+          首次使用需安装完整安装版；ZIP 版请先安装。更新保留本机设置、插件和数据库。
+        </p>
+        <label
+          ><input v-model="autoCheckUpdate" type="checkbox" @change="changeAutoCheck" /> 自动检查
+          CAI.Tools 更新（下载和安装前需确认）</label
         >
-          查看上游发布说明
-        </button>
       </div>
 
       <!-- 保留上游版权归属 -->

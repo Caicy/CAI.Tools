@@ -448,6 +448,7 @@ declare global {
 
         // 软件更新
         updaterCheckUpdate: () => Promise<{
+          success?: boolean
           hasUpdate: boolean
           latestVersion?: string
           updateInfo?: any

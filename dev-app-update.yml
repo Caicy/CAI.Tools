@@ -1,3 +1,4 @@
 provider: github
-owner: ZToolsCenter
-repo: ZTools
+owner: Caicy
+repo: CAI.Tools
+channel: local

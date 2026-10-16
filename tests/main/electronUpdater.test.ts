@@ -7,7 +7,8 @@ const updaterMocks = vi.hoisted(() => ({
   downloadUpdate: vi.fn(),
   quitAndInstall: vi.fn(),
   setFeedURL: vi.fn(),
-  on: vi.fn()
+  on: vi.fn(),
+  removeListener: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -26,7 +27,8 @@ vi.mock('electron-updater', () => ({
     checkForUpdates: updaterMocks.checkForUpdates,
     quitAndInstall: updaterMocks.quitAndInstall,
     setFeedURL: updaterMocks.setFeedURL,
-    on: updaterMocks.on
+    on: updaterMocks.on,
+    removeListener: updaterMocks.removeListener
   }
 }))
 
@@ -85,6 +87,132 @@ describe('ElectronUpdaterService cancellation', () => {
     await expect(secondCancellation).resolves.toEqual({ success: true, cancelled: true })
     await expect(secondDownload).resolves.toEqual({ success: false, cancelled: true })
     expect(callbacks.onDownloadCancelled).toHaveBeenCalledTimes(2)
+    expect(updaterMocks.quitAndInstall).not.toHaveBeenCalled()
+  })
+
+  it('pins the public CAI.Tools local channel and refuses a foreign feed', async () => {
+    const { autoUpdater } = await import('electron-updater')
+    const service = new ElectronUpdaterService({
+      onDownloadStart: vi.fn(),
+      onDownloadProgress: vi.fn(),
+      onDownloadCancelled: vi.fn(),
+      onDownloaded: vi.fn(),
+      onDownloadFailed: vi.fn(),
+      onBeforeInstall: vi.fn()
+    })
+    expect(updaterMocks.setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: 'Caicy',
+      repo: 'CAI.Tools',
+      private: false
+    })
+    expect(autoUpdater.channel).toBe('local')
+    expect(autoUpdater.allowDowngrade).toBe(false)
+    await expect(
+      service.downloadAndInstall({
+        version: '3.2.0-local.4',
+        changelog: '',
+        feedUrl: 'https://example.com/feed'
+      })
+    ).resolves.toMatchObject({ success: false })
+    expect(updaterMocks.downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('keeps the downloaded update and restores quit state when installation throws', async () => {
+    const callbacks = {
+      onDownloadStart: vi.fn(),
+      onDownloadProgress: vi.fn(),
+      onDownloadCancelled: vi.fn(),
+      onDownloaded: vi.fn(),
+      onDownloadFailed: vi.fn(),
+      onBeforeInstall: vi.fn(),
+      onInstallFailed: vi.fn()
+    }
+    const service = new ElectronUpdaterService(callbacks)
+    await service.checkForUpdates()
+    const downloaded = updaterMocks.on.mock.calls.find(
+      ([event]) => event === 'update-downloaded'
+    )![1]
+    downloaded({ version: '3.2.0-local.4', releaseNotes: '' })
+    updaterMocks.quitAndInstall.mockImplementationOnce(() => {
+      throw new Error('permission denied')
+    })
+    expect(service.installDownloadedUpdate()).toMatchObject({
+      success: false,
+      error: 'permission denied'
+    })
+    expect(service.getDownloadStatus().hasDownloaded).toBe(true)
+    expect(callbacks.onInstallFailed).toHaveBeenCalledOnce()
+  })
+
+  it('retries a failed download and installs only after the verified completion event', async () => {
+    const callbacks = {
+      onDownloadStart: vi.fn(),
+      onDownloadProgress: vi.fn(),
+      onDownloadCancelled: vi.fn(),
+      onDownloaded: vi.fn(),
+      onDownloadFailed: vi.fn(),
+      onBeforeInstall: vi.fn()
+    }
+    const service = new ElectronUpdaterService(callbacks)
+    await service.checkForUpdates()
+    updaterMocks.downloadUpdate.mockRejectedValueOnce(new Error('SHA512 checksum mismatch'))
+    await expect(service.downloadAndInstall()).resolves.toMatchObject({
+      success: false,
+      error: 'SHA512 checksum mismatch'
+    })
+    expect(updaterMocks.quitAndInstall).not.toHaveBeenCalled()
+    updaterMocks.downloadUpdate.mockImplementationOnce(async () => {
+      updaterMocks.on.mock.calls.find(([event]) => event === 'update-downloaded')![1]({
+        version: '3.1.0'
+      })
+      return ['/fixture-setup.exe']
+    })
+    await expect(service.downloadAndInstall()).resolves.toEqual({ success: true })
+    expect(updaterMocks.quitAndInstall).toHaveBeenCalledExactlyOnceWith(true, true)
+    expect(callbacks.onBeforeInstall).toHaveBeenCalledOnce()
+  })
+
+  it('merges concurrent checks and preserves a downloaded update during further checks', async () => {
+    const callbacks = {
+      onDownloadStart: vi.fn(),
+      onDownloadProgress: vi.fn(),
+      onDownloadCancelled: vi.fn(),
+      onDownloaded: vi.fn(),
+      onDownloadFailed: vi.fn(),
+      onBeforeInstall: vi.fn()
+    }
+    const service = new ElectronUpdaterService(callbacks)
+    await Promise.all([service.checkForUpdates(), service.checkForUpdates()])
+    expect(updaterMocks.checkForUpdates).toHaveBeenCalledOnce()
+    updaterMocks.on.mock.calls.find(([event]) => event === 'update-downloaded')![1]({
+      version: '3.1.0'
+    })
+    await expect(service.checkForUpdates()).resolves.toMatchObject({
+      status: 'downloaded',
+      hasUpdate: true
+    })
+    expect(service.getDownloadStatus().hasDownloaded).toBe(true)
+    expect(updaterMocks.checkForUpdates).toHaveBeenCalledOnce()
+    service.cleanup()
+    expect(updaterMocks.removeListener).toHaveBeenCalledTimes(6)
+  })
+
+  it('returns a network check failure without installing or offering an update', async () => {
+    const service = new ElectronUpdaterService({
+      onDownloadStart: vi.fn(),
+      onDownloadProgress: vi.fn(),
+      onDownloadCancelled: vi.fn(),
+      onDownloaded: vi.fn(),
+      onDownloadFailed: vi.fn(),
+      onBeforeInstall: vi.fn()
+    })
+    updaterMocks.checkForUpdates.mockRejectedValueOnce(new Error('network unavailable'))
+    await expect(service.checkForUpdates()).resolves.toMatchObject({
+      success: false,
+      hasUpdate: false,
+      error: 'network unavailable'
+    })
     expect(updaterMocks.quitAndInstall).not.toHaveBeenCalled()
   })
 })

@@ -1,16 +1,16 @@
 {
   "name": "CAI.Tools",
-  "version": "3.2.0-local.3",
+  "version": "3.2.0-local.4",
   "description": "CAI.Tools 本地工具箱",
   "main": "./out/main/index.js",
   "author": "ZToolsCenter",
-  "homepage": "https://github.com/ZToolsCenter/ZTools",
+  "homepage": "https://github.com/Caicy/CAI.Tools",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ZToolsCenter/ZTools.git"
+    "url": "https://github.com/Caicy/CAI.Tools.git"
   },
   "bugs": {
-    "url": "https://github.com/ZToolsCenter/ZTools/issues"
+    "url": "https://github.com/Caicy/CAI.Tools/issues"
   },
   "license": "MIT",
   "scripts": {

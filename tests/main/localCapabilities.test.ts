@@ -178,7 +178,15 @@ describe('local capability compatibility boundary', () => {
 
   it('keeps internal sender checks and routes only authorized version checks through the local facade', async () => {
     const { unavailableOfficialCapability } = await import('../../src/shared/localEdition')
-    const { default: localUpdater } = await import('../../src/main/api/localUpdater')
+    const selfUpdater = {
+      checkUpdate: vi.fn(async () => ({
+        success: true,
+        hasUpdate: true,
+        updateInfo: { version: '3.2.0-local.4' }
+      })),
+      startUpdate: vi.fn(async () => ({ success: true })),
+      setAutoCheck: vi.fn()
+    }
     const compiled = ts.transpileModule(source('src/main/api/plugin/internal.ts'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS }
     }).outputText
@@ -191,7 +199,7 @@ describe('local capability compatibility boundary', () => {
         imported.push(specifier)
         if (specifier === 'electron') return { ipcMain: ipc }
         if (specifier.includes('localEdition')) return { unavailableOfficialCapability }
-        if (specifier === '../localUpdater') return { default: localUpdater }
+        if (specifier === '../updater') return { default: selfUpdater }
         return { default: {} }
       }
     })
@@ -226,8 +234,7 @@ describe('local capability compatibility boundary', () => {
     expect(
       await handler('handle', 'internal:updater-start-update')({ sender: { trusted: true } }, 1)
     ).toMatchObject({
-      success: false,
-      code: 'OFFICIAL_CAPABILITY_UNAVAILABLE'
+      success: true
     })
     expect(
       await handler('handle', 'internal:updater-set-auto-check')(
@@ -236,7 +243,7 @@ describe('local capability compatibility boundary', () => {
       )
     ).toEqual({
       success: true,
-      enabled: false
+      enabled: true
     })
     expect(ipc.fetch).not.toHaveBeenCalled()
     // 只有已授权的主动检查可请求固定上游接口，返回值不包含官方安装包信息。
@@ -253,15 +260,14 @@ describe('local capability compatibility boundary', () => {
       await handler('handle', 'internal:updater-check-update')({ sender: { trusted: true } })
     ).toMatchObject({
       success: true,
-      updateAvailable: true,
       hasUpdate: true,
-      updateInfo: { version: '3.3.0' }
+      updateInfo: { version: '3.2.0-local.4' }
     })
-    expect(ipc.fetch).toHaveBeenCalledTimes(1)
+    expect(ipc.fetch).not.toHaveBeenCalled()
     expect(ipc.httpRequest).not.toHaveBeenCalled()
     expect(ipc.openExternal).not.toHaveBeenCalled()
-    expect(imported).toContain('../localUpdater')
-    expect(imported.some((specifier) => /notifications|\/updater(?:\.js)?$/.test(specifier))).toBe(
+    expect(imported).toContain('../updater')
+    expect(imported.some((specifier) => /notifications|serverUpdateCatalog/.test(specifier))).toBe(
       false
     )
   })
@@ -276,7 +282,7 @@ describe('local capability compatibility boundary', () => {
       'src/main/api/renderer/notifications.ts',
       'src/main/api/plugin/user.ts',
       'src/main/api/plugin/payment.ts',
-      'src/main/api/updater.ts',
+      'src/main/api/serverUpdateCatalog.ts',
       'src/main/core/firstRunStorageImport.ts',
       'src/main/core/storage/legacyImportService.ts'
     ])

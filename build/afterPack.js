@@ -43,7 +43,7 @@ async function writeFullInstallInfo(context) {
 
   // 标记必须位于最终 Resources 目录中，并在正式签名前完成写入。
   const packageJson = require('../package.json')
-  const appId = 'top.z-tools'
+  const appId = context.packager.appInfo.id
   let resourcesPath = ''
   let updater = ''
 

@@ -1,6 +1,9 @@
-export const GITHUB_REPOSITORY_URL = 'https://github.com/ZToolsCenter/ZTools'
+export const GITHUB_UPDATE_OWNER = 'Caicy'
+export const GITHUB_UPDATE_REPO = 'CAI.Tools'
+export const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_UPDATE_OWNER}/${GITHUB_UPDATE_REPO}`
 export const GITHUB_RELEASES_URL = `${GITHUB_REPOSITORY_URL}/releases`
-export const GITHUB_LATEST_RELEASE_URL = `${GITHUB_RELEASES_URL}/latest`
+// GitHub /latest 不包含 local 预发布版，手动入口必须展示完整发布列表。
+export const GITHUB_LATEST_RELEASE_URL = GITHUB_RELEASES_URL
 
 export interface SelectableUpdateSource {
   id: number
@@ -24,9 +27,7 @@ export function isInAppUpdateSource(source: SelectableUpdateSource): boolean {
  * @returns 默认下载源标识；没有可用来源时返回 null。
  */
 export function getDefaultUpdateSourceID(sources: SelectableUpdateSource[]): number | null {
-  const officialSource = sources.find(
-    (source) => source.platformName.trim() === '官方源'
-  )
+  const officialSource = sources.find((source) => source.platformName.trim() === '官方源')
   const githubSource = sources.find(
     (source) => source.platformName.trim().toLowerCase() === 'github'
   )
@@ -35,7 +36,7 @@ export function getDefaultUpdateSourceID(sources: SelectableUpdateSource[]): num
 
 /**
  * 生成指定版本的 GitHub Release 页面地址。
- * @param version 目标版本号，不包含前导 v；为空时返回最新正式版页面。
+ * @param version 目标版本号，不包含前导 v；为空时返回包含预发布版的发布列表。
  * @returns GitHub Release 页面地址。
  */
 export function getGitHubReleaseUrl(version?: string): string {

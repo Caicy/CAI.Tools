@@ -4,8 +4,9 @@ import path from 'path'
 import yaml from 'yaml'
 import { getGitHubReleaseUrl, GITHUB_LATEST_RELEASE_URL } from '@shared/updateSource'
 import { EXPECTED_ELECTRON_VERSION } from '../runtimeCompatibility'
+import { LOCAL_APP_ID } from '../../shared/localEdition'
 
-export const WINDOWS_APP_ID = 'top.z-tools'
+export const WINDOWS_APP_ID = LOCAL_APP_ID
 export const WINDOWS_ELECTRON_VERSION = EXPECTED_ELECTRON_VERSION
 export const WINDOWS_UPDATER_TYPE = 'electron-updater-nsis'
 export const WINDOWS_INSTALL_INFO_FILE = 'ztools-install-info.json'
@@ -30,7 +31,7 @@ export interface WindowsInstallCompatibility {
 /**
  * 生成指定 Windows 版本对应的 GitHub Release 下载页面地址。
  * @param version 检查更新返回的目标版本号。
- * @returns 指定版本的 Release 页面地址；版本为空时返回最新正式版页面。
+ * @returns 指定版本的 Release 页面地址；版本为空时返回包含预发布版的列表。
  */
 export function getWindowsReleaseUrl(version?: string): string {
   return getGitHubReleaseUrl(version)
@@ -125,8 +126,11 @@ export async function getWindowsInstallCompatibility(): Promise<WindowsInstallCo
     const updateConfig = yaml.parse(await fs.readFile(updateConfigPath, 'utf8'))
     hasUpdateConfig =
       updateConfig?.provider === 'github' &&
-      updateConfig?.owner === 'ZToolsCenter' &&
-      updateConfig?.repo === 'ZTools'
+      updateConfig?.owner === 'Caicy' &&
+      updateConfig?.repo === 'CAI.Tools' &&
+      updateConfig?.channel === 'local' &&
+      !updateConfig?.token &&
+      !updateConfig?.private
   } catch {
     hasUpdateConfig = false
   }

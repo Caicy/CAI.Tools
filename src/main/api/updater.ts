@@ -7,7 +7,6 @@ import databaseAPI from './shared/database.js'
 import windowManager from '../managers/windowManager'
 import { applyWindowMaterial, getDefaultWindowMaterial } from '../utils/windowUtils.js'
 import { isInAppUpdateSource } from '../../shared/updateSource'
-import { fetchLatestServerUpdate, resolvePlatformUpdateInfo } from './serverUpdateCatalog'
 
 const AUTO_CHECK_INTERVAL_MS = 30 * 60 * 1000
 
@@ -18,10 +17,12 @@ export class UpdaterAPI {
   private updateWindow: BrowserWindow | null = null
   private platformUpdater: PlatformUpdaterService | null = null
   private initializationPromise: Promise<void> = Promise.resolve()
+  private initializationError: string | null = null
   private lastAutoNotifiedVersion = ''
   private autoCheckTimer: NodeJS.Timeout | null = null
   private autoCheckEnabled = false
   private autoCheckInFlight = false
+  private initialized = false
 
   /**
    * 初始化平台更新服务并注册更新窗口使用的 IPC。
@@ -29,6 +30,8 @@ export class UpdaterAPI {
    * @returns 无返回值。
    */
   public init(mainWindow: BrowserWindow): void {
+    if (this.initialized) return
+    this.initialized = true
     this.mainWindow = mainWindow
     this.platformUpdater = createPlatformUpdater({
       onDownloadStart: (info) => this.sendUpdateEvent('update-download-start', info),
@@ -36,9 +39,12 @@ export class UpdaterAPI {
       onDownloadCancelled: () => this.sendUpdateEvent('update-download-cancelled', undefined),
       onDownloaded: (info, showWindow) => this.handleUpdateDownloaded(info, showWindow),
       onDownloadFailed: (error) => this.sendUpdateEvent('update-download-failed', { error }),
-      onBeforeInstall: () => windowManager.setQuitting(true)
+      onBeforeInstall: () => windowManager.setQuitting(true),
+      onInstallFailed: () => windowManager.setQuitting(false)
     })
     this.initializationPromise = this.platformUpdater.initialize().catch((error) => {
+      // 初始化失败必须显式反馈，不能被解释成“没有新版本”。
+      this.initializationError = error instanceof Error ? error.message : '更新器初始化失败'
       console.error('[Updater] 初始化平台更新器失败:', error)
     })
 
@@ -46,6 +52,12 @@ export class UpdaterAPI {
     this.setAutoCheck(databaseAPI.dbGet('settings-general')?.autoCheckUpdate !== false)
   }
 
+  /**
+   * 保存已验证的下载结果并通知更新窗口。
+   * @param info 下载完成的版本。
+   * @param showWindow 是否显示更新窗口。
+   * @returns 无返回值。
+   */
   private handleUpdateDownloaded(info: PlatformUpdateInfo, showWindow: boolean): void {
     this.availableUpdateInfo = info
     this.downloadedUpdateInfo = info
@@ -53,6 +65,12 @@ export class UpdaterAPI {
     if (showWindow) this.createUpdateWindow()
   }
 
+  /**
+   * 向仍存活的宿主和更新窗口广播更新状态。
+   * @param channel 更新事件通道。
+   * @param payload 事件数据。
+   * @returns 无返回值。
+   */
   private sendUpdateEvent(channel: string, payload: unknown): void {
     this.mainWindow?.webContents.send(channel, payload)
     if (this.updateWindow && !this.updateWindow.isDestroyed()) {
@@ -60,11 +78,21 @@ export class UpdaterAPI {
     }
   }
 
+  /**
+   * 发布可用版本并显示用户确认窗口。
+   * @param info 已检查的自有版本。
+   * @returns 无返回值。
+   */
   private showAvailableUpdate(info: PlatformUpdateInfo): void {
     this.notifyAvailableUpdate(info)
     this.createUpdateWindow()
   }
 
+  /**
+   * 保存版本并通知搜索栏更新入口。
+   * @param info 已检查的自有版本。
+   * @returns 无返回值。
+   */
   private notifyAvailableUpdate(info: PlatformUpdateInfo): void {
     this.availableUpdateInfo = info
     this.sendUpdateEvent('update-available', info)
@@ -114,8 +142,8 @@ export class UpdaterAPI {
       this.autoCheckTimer = null
       return
     }
-    // 自动检查独立请求更新目录，E2E 不启动后台网络请求。
-    if (process.env.ZTOOLS_E2E === '1' || this.autoCheckTimer) return
+    // 源码运行及 E2E 不启动后台联网；用户仍可主动检查，但不能安装。
+    if (!app.isPackaged || process.env.ZTOOLS_E2E === '1' || this.autoCheckTimer) return
     void this.checkAutomatically()
     this.autoCheckTimer = setInterval(() => {
       void this.checkAutomatically()
@@ -123,21 +151,28 @@ export class UpdaterAPI {
   }
 
   /**
-   * 通过与手动检查相同的设备请求查询版本，避免重复自动提示。
+   * 通过自有 GitHub 源查询版本，同一版本只自动提示一次。
    * @returns 更新检查处理完成后的 Promise。
    */
   private async checkAutomatically(): Promise<void> {
     if (!this.autoCheckEnabled || this.autoCheckInFlight) return
     this.autoCheckInFlight = true
     try {
-      const update = await fetchLatestServerUpdate()
+      await this.initializationPromise
+      if (this.initializationError) return
+      const result = await this.platformUpdater?.checkForUpdates(false)
       if (
         !this.autoCheckEnabled ||
-        !update?.available ||
-        update.latestVersion === this.lastAutoNotifiedVersion
+        !result?.success ||
+        !result.hasUpdate ||
+        !result.updateInfo ||
+        result.status === 'downloading' ||
+        result.status === 'downloaded' ||
+        result.status === 'installing' ||
+        result.updateInfo.version === this.lastAutoNotifiedVersion
       )
         return
-      const info = await resolvePlatformUpdateInfo(update)
+      const info = result.updateInfo
       // 请求期间关闭自动检查后，不再展示提示。
       if (!this.autoCheckEnabled) return
       this.lastAutoNotifiedVersion = info.version
@@ -149,6 +184,10 @@ export class UpdaterAPI {
     }
   }
 
+  /**
+   * 汇总平台状态与可用版本，保留下载和安装阶段的真实状态。
+   * @returns 窗口可恢复的更新状态。
+   */
   private getDownloadStatus(): ReturnType<PlatformUpdaterService['getDownloadStatus']> & {
     hasUpdate: boolean
   } {
@@ -162,7 +201,7 @@ export class UpdaterAPI {
       hasUpdate: Boolean(info),
       version: status.version ?? info?.version,
       changelog: status.changelog ?? info?.changelog,
-      status: status.hasDownloaded ? 'downloaded' : info ? 'available' : status.status
+      status: status.status === 'idle' && info ? 'available' : status.status
     }
   }
 
@@ -179,6 +218,7 @@ export class UpdaterAPI {
     if (!app.isPackaged) return this.rejectDevelopmentUpdate()
 
     await this.initializationPromise
+    if (this.initializationError) return { success: false, error: this.initializationError }
     if (!this.platformUpdater) return { success: false, error: '更新器尚未初始化' }
     return this.platformUpdater.installDownloadedUpdate()
   }
@@ -194,30 +234,32 @@ export class UpdaterAPI {
     this.platformUpdater?.cleanup()
   }
 
+  /**
+   * 从平台更新器读取自有 GitHub 版本并展示可用更新。
+   * @returns 包含版本、下载来源或错误的检查结果。
+   */
   public async checkUpdate(): Promise<
     Awaited<ReturnType<PlatformUpdaterService['checkForUpdates']>>
   > {
     try {
-      const update = await fetchLatestServerUpdate()
-      if (!update?.available) {
+      await this.initializationPromise
+      if (this.initializationError) {
         return {
-          success: true,
-          status: 'not-available',
+          success: false,
+          status: 'error',
           hasUpdate: false,
-          currentVersion: app.getVersion(),
-          latestVersion: update?.latestVersion
+          error: this.initializationError
         }
       }
-      const info = await resolvePlatformUpdateInfo(update)
-      this.showAvailableUpdate(info)
-      return {
-        success: true,
-        status: 'available',
-        hasUpdate: true,
-        currentVersion: app.getVersion(),
-        latestVersion: info.version,
-        updateInfo: info
+      if (!this.platformUpdater)
+        return { success: false, hasUpdate: false, error: '更新器尚未初始化' }
+      const result = await this.platformUpdater.checkForUpdates(false)
+      if (result.success && result.hasUpdate && result.updateInfo) {
+        this.showAvailableUpdate(result.updateInfo)
+      } else if (result.success && !this.platformUpdater.getDownloadStatus().hasDownloaded) {
+        this.availableUpdateInfo = null
       }
+      return result
     } catch (error) {
       return {
         success: false,
@@ -230,7 +272,7 @@ export class UpdaterAPI {
   }
 
   /**
-   * 使用用户选择的下载渠道执行当前更新，人工渠道直接在浏览器中打开。
+   * 使用检查结果中的 GitHub 来源执行更新。
    * @param sourceID 用户在更新窗口中选择的下载源标识；未提供时沿用默认渠道。
    * @returns 更新流程启动结果。
    */
@@ -243,7 +285,7 @@ export class UpdaterAPI {
     const updateInfo = this.availableUpdateInfo ?? this.downloadedUpdateInfo
     if (!updateInfo) return { success: false, error: '没有可用的更新' }
 
-    // 渠道由服务端下发，手动渠道无需初始化安装器即可跳转浏览器。
+    // 渠道只来自固定的自有更新器，不能由 IPC 调用方提供地址。
     const selectedSource =
       typeof sourceID === 'number'
         ? updateInfo.sources?.find((source) => source.id === sourceID)
@@ -255,6 +297,10 @@ export class UpdaterAPI {
       return this.openDownloadSource(selectedSource.id)
     }
     if (!selectedSource && updateInfo.manualDownloadRequired) {
+      if (updateInfo.releaseUrl) {
+        await shell.openExternal(updateInfo.releaseUrl)
+        return { success: true }
+      }
       const manualSource = updateInfo.sources?.find((source) => !isInAppUpdateSource(source))
       if (!manualSource) return { success: false, error: '没有可用的手动下载地址' }
       return this.openDownloadSource(manualSource.id)
@@ -263,6 +309,7 @@ export class UpdaterAPI {
     // 应用内下载安装必须依赖打包产物和已经初始化的平台更新器。
     if (!app.isPackaged) return this.rejectDevelopmentUpdate()
     await this.initializationPromise
+    if (this.initializationError) return { success: false, error: this.initializationError }
     if (!this.platformUpdater) return { success: false, error: '更新器尚未初始化' }
     const selectedUpdateInfo = selectedSource
       ? {
@@ -285,6 +332,7 @@ export class UpdaterAPI {
     error?: string
   }> {
     await this.initializationPromise
+    if (this.initializationError) return { success: false, error: this.initializationError }
     if (!this.platformUpdater) return { success: false, error: '更新器尚未初始化' }
     return this.platformUpdater.cancelUpdate()
   }
@@ -318,7 +366,7 @@ export class UpdaterAPI {
     const error = '开发环境不支持升级'
     const options: Electron.MessageBoxOptions = {
       type: 'info',
-      title: 'ZTools',
+      title: 'CAI.Tools',
       message: error,
       buttons: ['知道了'],
       defaultId: 0,
@@ -337,6 +385,10 @@ export class UpdaterAPI {
     return { success: false, error }
   }
 
+  /**
+   * 重新显示已检查或下载的更新窗口。
+   * @returns 窗口显示结果。
+   */
   private showUpdateWindow(): { success: boolean; error?: string } {
     if (!this.availableUpdateInfo && !this.downloadedUpdateInfo) {
       return { success: false, error: '没有可用的更新' }
@@ -345,6 +397,11 @@ export class UpdaterAPI {
     return { success: true }
   }
 
+  /**
+   * 将当前本机材质设置应用到更新窗口。
+   * @param win 更新窗口。
+   * @returns 无返回值。
+   */
   private applyMaterialToUpdateWindow(win: BrowserWindow): void {
     try {
       const settings = databaseAPI.dbGet('settings-general')
@@ -449,6 +506,10 @@ export class UpdaterAPI {
     })
   }
 
+  /**
+   * 关闭提示窗口，保留后台下载状态。
+   * @returns 无返回值。
+   */
   private closeUpdateWindow(): void {
     if (this.updateWindow && !this.updateWindow.isDestroyed()) this.updateWindow.close()
   }

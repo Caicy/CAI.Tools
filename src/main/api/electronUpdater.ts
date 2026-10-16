@@ -3,6 +3,12 @@ import { app } from 'electron'
 import { CancellationToken } from 'builder-util-runtime'
 import log from 'electron-log'
 import { NsisUpdater, autoUpdater, type UpdateInfo } from 'electron-updater'
+import {
+  GITHUB_UPDATE_OWNER,
+  GITHUB_UPDATE_REPO,
+  GITHUB_RELEASES_URL,
+  getGitHubReleaseUrl
+} from '../../shared/updateSource'
 import type {
   PlatformDownloadStatus,
   PlatformUpdateActionResult,
@@ -45,7 +51,17 @@ function toPlatformUpdateInfo(info: UpdateInfo): PlatformUpdateInfo {
   return {
     version: info.version,
     changelog: releaseNotes,
-    releaseNotes
+    releaseNotes,
+    releaseUrl: getGitHubReleaseUrl(info.version),
+    sources: [
+      {
+        id: 1,
+        platformName: 'GitHub',
+        isDirect: true,
+        downloadUrl: getGitHubReleaseUrl(info.version),
+        feedUrl: GITHUB_RELEASES_URL
+      }
+    ]
   }
 }
 
@@ -56,6 +72,10 @@ export class ElectronUpdaterService {
   private downloadPromise: Promise<PlatformUpdateActionResult> | null = null
   private downloadCancellationToken: CancellationToken | null = null
   private showWindowAfterDownload = true
+  private readonly listeners: Array<
+    [Parameters<typeof autoUpdater.on>[0], (...args: any[]) => void]
+  > = []
+  private installError: string | null = null
 
   /**
    * 初始化标准更新器并绑定跨平台更新事件。
@@ -68,32 +88,51 @@ export class ElectronUpdaterService {
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = false
     autoUpdater.autoRunAppAfterInstall = true
-    autoUpdater.allowPrerelease = autoUpdater.currentVersion.prerelease.length > 0
+    // 自有公开仓库是唯一更新源；忽略历史配置中的上游源或 Token。
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: GITHUB_UPDATE_OWNER,
+      repo: GITHUB_UPDATE_REPO,
+      private: false
+    })
+    autoUpdater.channel = 'local'
+    autoUpdater.allowPrerelease = true
+    // channel setter 会打开降级，必须在设置通道后显式关闭。
+    autoUpdater.allowDowngrade = false
     autoUpdater.disableDifferentialDownload = false
 
-    // 未打包运行时读取 dev-app-update.yml，仅用于检查 GitHub Release。
+    // 允许源码运行时手动检查固定 GitHub 源；安装仍由宿主的打包检查拦截。
     autoUpdater.forceDevUpdateConfig = !app.isPackaged
 
     // 将 electron-updater 状态映射到应用现有的更新状态机。
-    autoUpdater.on('checking-for-update', () => {
+    this.listen('checking-for-update', () => {
       this.state = 'checking'
     })
-    autoUpdater.on('update-available', (info) => {
+    this.listen('update-available', (info) => {
       this.state = 'available'
       this.updateInfo = toPlatformUpdateInfo(info)
     })
-    autoUpdater.on('update-not-available', () => {
+    this.listen('update-not-available', () => {
       this.state = 'not-available'
       this.updateInfo = null
     })
-    autoUpdater.on('download-progress', (info) => this.callbacks.onDownloadProgress(info))
-    autoUpdater.on('update-downloaded', (info) => {
+    this.listen('download-progress', (info) => this.callbacks.onDownloadProgress(info))
+    this.listen('update-downloaded', (info) => {
+      // 底层完成事件可能晚于用户取消，不得重新发布可安装状态。
+      if (this.downloadCancellationToken?.cancelled) return
       this.state = 'downloaded'
       this.updateInfo = toPlatformUpdateInfo(info)
       this.callbacks.onDownloaded(this.updateInfo, this.showWindowAfterDownload)
     })
-    autoUpdater.on('error', (error) => {
-      this.state = 'error'
+    this.listen('error', (error) => {
+      if (this.downloadCancellationToken?.cancelled) return
+      if (this.state === 'installing') {
+        this.installError = error.message
+        this.state = 'downloaded'
+        this.callbacks.onInstallFailed?.()
+      } else {
+        this.state = 'error'
+      }
       this.callbacks.onDownloadFailed(error.message)
     })
   }
@@ -104,6 +143,17 @@ export class ElectronUpdaterService {
    * @returns 更新检查结果。
    */
   public async checkForUpdates(downloadWhenAvailable = false): Promise<PlatformUpdateResult> {
+    // 下载或安装期间不得让检查事件覆盖已验证的安装包状态。
+    if (['downloading', 'downloaded', 'installing'].includes(this.state)) {
+      return {
+        success: true,
+        status: this.state,
+        hasUpdate: true,
+        updateInfo: this.updateInfo ?? undefined,
+        latestVersion: this.updateInfo?.version,
+        currentVersion: autoUpdater.currentVersion.version
+      }
+    }
     if (this.checkPromise) return this.checkPromise
 
     // 合并并发检查，避免重复请求 GitHub Release 元数据。
@@ -238,20 +288,19 @@ export class ElectronUpdaterService {
   }
 
   /**
-   * 根据可选服务端 feed 下载当前更新，并在完成后启动平台安装流程。
-   * @param updateInfo 检查更新发现的目标版本及服务端 feed 地址。
+   * 从固定自有 GitHub 源下载已检查的更新，并在完成后启动安装。
+   * @param updateInfo 检查更新发现的目标版本及来源标识。
    * @returns 下载和安装启动结果。
    */
   public async downloadAndInstall(
     updateInfo?: PlatformUpdateInfo
   ): Promise<PlatformUpdateActionResult> {
-    if (updateInfo?.feedUrl) {
-      // 服务端 feed 提供选中下载源的元数据和对应安装包地址。
-      autoUpdater.setFeedURL({ provider: 'generic', url: updateInfo.feedUrl })
-      const checkResult = await this.checkForUpdates(false)
-      if (!checkResult.hasUpdate || checkResult.latestVersion !== updateInfo.version) {
-        return { success: false, error: '更新元数据与当前版本不一致' }
-      }
+    // 不接受渲染进程或历史服务端提供的替代 feed，防止安装上游或第三方构建。
+    if (updateInfo?.feedUrl && updateInfo.feedUrl !== GITHUB_RELEASES_URL) {
+      return { success: false, error: '仅允许从 CAI.Tools GitHub Releases 更新' }
+    }
+    if (updateInfo && updateInfo.version !== this.updateInfo?.version) {
+      return { success: false, error: '更新元数据与当前版本不一致，请重新检查' }
     }
     const downloadResult = await this.downloadUpdate(false)
     if (!downloadResult.success) return downloadResult
@@ -267,12 +316,47 @@ export class ElectronUpdaterService {
 
     // NSIS 需要显式保留当前安装目录，macOS 则交给 Squirrel.Mac 替换应用包。
     this.state = 'installing'
+    this.installError = null
     this.callbacks.onBeforeInstall()
     if (process.platform === 'win32') {
       ;(autoUpdater as NsisUpdater).installDirectory = path.dirname(process.execPath)
     }
-    autoUpdater.quitAndInstall(true, true)
-    return { success: true }
+    try {
+      autoUpdater.quitAndInstall(true, true)
+      if (this.installError) return { success: false, error: this.installError }
+      return { success: true }
+    } catch (error) {
+      // 安装进程启动前失败时恢复窗口退出行为，保留缓存供重试。
+      this.state = 'downloaded'
+      this.callbacks.onInstallFailed?.()
+      const message = error instanceof Error ? error.message : '安装更新失败'
+      this.callbacks.onDownloadFailed(message)
+      return { success: false, error: message }
+    }
+  }
+
+  /**
+   * 注册并保存本实例拥有的更新器监听器。
+   * @param event 更新器事件名。
+   * @param listener 当前实例的事件处理函数。
+   * @returns 无返回值。
+   */
+  private listen(
+    event: Parameters<typeof autoUpdater.on>[0],
+    listener: (...args: any[]) => void
+  ): void {
+    this.listeners.push([event, listener])
+    autoUpdater.on(event, listener)
+  }
+
+  /**
+   * 取消下载并释放本实例监听器，防止重复初始化造成重复安装提示。
+   * @returns 无返回值。
+   */
+  public cleanup(): void {
+    this.downloadCancellationToken?.cancel()
+    for (const [event, listener] of this.listeners) autoUpdater.removeListener(event, listener)
+    this.listeners.length = 0
   }
 
   /**

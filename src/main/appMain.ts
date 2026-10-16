@@ -4,7 +4,7 @@ import log from 'electron-log'
 import path from 'path'
 import lmdbInstance from './core/lmdb/lmdbInstance'
 import api from './api/index'
-import localUpdater from './api/localUpdater'
+import updater from './api/updater'
 import appsAPI from './api/renderer/commands'
 import pluginsAPI from './api/renderer/plugins'
 import appWatcher from './appWatcher'
@@ -214,8 +214,8 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   windowManager.unregisterAllShortcuts()
   api.cleanup()
-  // 本地提醒层保留清理合同，不持有原版更新器或安装资源。
-  localUpdater.cleanup()
+  // 停止自有更新检查并取消未完成的下载，数据库随后按原有退出合同关闭。
+  updater.cleanup()
   // 停止应用目录监听
   appWatcher.stop()
   // 清理悬浮球

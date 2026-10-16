@@ -17,7 +17,7 @@ const validInstallInfo: MacInstallInfo = {
 
 describe('validateMacInstall', () => {
   it('uses the GitHub latest Release page for complete-install migration', () => {
-    expect(MAC_RELEASE_URL).toBe('https://github.com/ZToolsCenter/ZTools/releases/latest')
+    expect(MAC_RELEASE_URL).toBe('https://github.com/Caicy/CAI.Tools/releases')
   })
 
   it('accepts a complete signed installation with update configuration', () => {

@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => {
   })
 
   return {
+    initialize: vi.fn(() => Promise.resolve()),
+    checkForUpdates: vi.fn(),
     browserWindow,
     ipcListeners,
     latestWindow,
@@ -49,7 +51,7 @@ vi.mock('electron', () => ({
   app: {
     getAppPath: vi.fn(() => 'D:\\ztools'),
     getVersion: vi.fn(() => '3.1.0'),
-    isPackaged: false
+    isPackaged: true
   },
   BrowserWindow: mocks.browserWindow,
   dialog: {
@@ -77,10 +79,10 @@ vi.mock('@electron-toolkit/utils', () => ({
 
 vi.mock('@platform-updater', () => ({
   default: vi.fn(() => ({
-    initialize: vi.fn(() => Promise.resolve()),
+    initialize: mocks.initialize,
     cleanup: vi.fn(),
     getDownloadStatus: vi.fn(() => ({ hasDownloaded: false, status: 'idle' })),
-    checkForUpdates: vi.fn(),
+    checkForUpdates: mocks.checkForUpdates,
     startUpdate: vi.fn(),
     cancelUpdate: vi.fn(),
     installDownloadedUpdate: vi.fn()
@@ -104,26 +106,19 @@ vi.mock('../../src/main/utils/windowUtils.js', () => ({
   getDefaultWindowMaterial: vi.fn(() => 'none')
 }))
 
-vi.mock('../../src/main/api/serverUpdateCatalog', () => ({
-  fetchLatestServerUpdate: vi.fn(() =>
-    Promise.resolve({ available: true, latestVersion: '3.2.0' })
-  ),
-  resolvePlatformUpdateInfo: vi.fn(() =>
-    Promise.resolve({
-      version: '3.2.0',
-      changelog: 'Changes',
-      sources: []
-    })
-  )
-}))
-
 import { UpdaterAPI } from '../../src/main/api/updater'
 import databaseAPI from '../../src/main/api/shared/database.js'
-import { fetchLatestServerUpdate } from '../../src/main/api/serverUpdateCatalog'
 
 describe('updater window controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.checkForUpdates.mockResolvedValue({
+      success: true,
+      hasUpdate: true,
+      status: 'available',
+      latestVersion: '3.2.0-local.4',
+      updateInfo: { version: '3.2.0-local.4', changelog: 'Changes', sources: [] }
+    })
     vi.useFakeTimers()
     vi.stubEnv('ZTOOLS_E2E', '1')
     vi.mocked(databaseAPI.dbGet).mockReturnValue(null)
@@ -144,23 +139,23 @@ describe('updater window controls', () => {
     const updater = new UpdaterAPI()
     updater.init({ webContents: { send: vi.fn() } } as any)
     await vi.advanceTimersByTimeAsync(0)
-    expect(fetchLatestServerUpdate).toHaveBeenCalledTimes(1)
+    expect(mocks.checkForUpdates).toHaveBeenCalledTimes(1)
     expect(mocks.browserWindow).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(30 * 60 * 1000)
-    expect(fetchLatestServerUpdate).toHaveBeenCalledTimes(2)
+    expect(mocks.checkForUpdates).toHaveBeenCalledTimes(2)
     expect(mocks.browserWindow).toHaveBeenCalledTimes(1)
 
     updater.setAutoCheck(false)
     await vi.advanceTimersByTimeAsync(30 * 60 * 1000)
-    expect(fetchLatestServerUpdate).toHaveBeenCalledTimes(2)
+    expect(mocks.checkForUpdates).toHaveBeenCalledTimes(2)
 
     updater.setAutoCheck(true)
     await vi.advanceTimersByTimeAsync(0)
-    expect(fetchLatestServerUpdate).toHaveBeenCalledTimes(3)
+    expect(mocks.checkForUpdates).toHaveBeenCalledTimes(3)
     updater.cleanup()
     await vi.advanceTimersByTimeAsync(30 * 60 * 1000)
-    expect(fetchLatestServerUpdate).toHaveBeenCalledTimes(3)
+    expect(mocks.checkForUpdates).toHaveBeenCalledTimes(3)
   })
 
   it('keeps automatic checks off when disabled while allowing manual checks', async () => {
@@ -169,17 +164,30 @@ describe('updater window controls', () => {
     const updater = new UpdaterAPI()
     updater.init({ webContents: { send: vi.fn() } } as any)
     await vi.advanceTimersByTimeAsync(30 * 60 * 1000)
-    expect(fetchLatestServerUpdate).not.toHaveBeenCalled()
+    expect(mocks.checkForUpdates).not.toHaveBeenCalled()
 
     expect(await updater.checkUpdate()).toMatchObject({ success: true, hasUpdate: true })
-    expect(fetchLatestServerUpdate).toHaveBeenCalledOnce()
+    expect(mocks.checkForUpdates).toHaveBeenCalledOnce()
+    updater.cleanup()
+  })
+
+  it('reports platform initialization failures instead of claiming the current version is latest', async () => {
+    mocks.initialize.mockRejectedValueOnce(new Error('update configuration unavailable'))
+    const updater = new UpdaterAPI()
+    updater.init({ webContents: { send: vi.fn() } } as any)
+    await expect(updater.checkUpdate()).resolves.toMatchObject({
+      success: false,
+      hasUpdate: false,
+      error: 'update configuration unavailable'
+    })
+    expect(mocks.checkForUpdates).not.toHaveBeenCalled()
     updater.cleanup()
   })
 
   it('does not notify when automatic checks are disabled during an in-flight request', async () => {
     vi.stubEnv('ZTOOLS_E2E', '0')
     let resolveUpdate!: (value: any) => void
-    vi.mocked(fetchLatestServerUpdate).mockImplementationOnce(
+    vi.mocked(mocks.checkForUpdates).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolveUpdate = resolve
@@ -187,8 +195,13 @@ describe('updater window controls', () => {
     )
     const updater = new UpdaterAPI()
     updater.init({ webContents: { send: vi.fn() } } as any)
+    await vi.advanceTimersByTimeAsync(0)
     updater.setAutoCheck(false)
-    resolveUpdate({ available: true, latestVersion: '3.2.0' })
+    resolveUpdate({
+      success: true,
+      hasUpdate: true,
+      updateInfo: { version: '3.2.0-local.4', changelog: '' }
+    })
     await vi.advanceTimersByTimeAsync(0)
     expect(mocks.browserWindow).not.toHaveBeenCalled()
     updater.cleanup()

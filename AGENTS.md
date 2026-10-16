@@ -66,8 +66,8 @@ src/main/                          # 主进程
     proxyManager.ts                # 代理配置统一管理
   api/
     index.ts                       # API 管理器（统一初始化所有模块 + 全局快捷键处理）
-    localUpdater.ts                # 本地版手动上游版本提示及旧更新入口兼容
-    updater.ts                     # 历史更新实现，不是本地版启动入口
+    localUpdater.ts                # 本地产品信息及独立的手动上游研究提醒
+    updater.ts                     # 自有 GitHub Releases 更新入口，复用平台更新器和窗口
     shared/                        # 主程序和插件共享 API
       database.ts                  # LMDB 数据库（命名空间隔离：ZTOOLS/ 和 PLUGIN/{name}/）
       clipboard.ts                 # 剪贴板 API
@@ -243,26 +243,27 @@ ztools-api-types/                  # 插件 API 类型定义子模块（对外�
 
 未写完整前缀的 `api/`、`core/`、`managers/` 路径相对 `src/main/`；`stores/`、`components/`、`composables/` 相对 `src/renderer/src/`。`resources/` 和 `internal-plugins/` 相对仓库根目录。
 
-| 修改目标       | 关键文件                                                                                                       |
-| -------------- | -------------------------------------------------------------------------------------------------------------- |
-| 插件系统       | `managers/pluginManager.ts`, `api/renderer/plugins.ts`, `api/plugin/`, `resources/preload.js`                  |
-| 搜索逻辑       | `stores/commandDataStore.ts`, `components/search/SearchResults.vue`, `composables/useSearchResults.ts`         |
-| 指令管理       | `api/renderer/commands.ts`, `api/renderer/commandMatchers.ts`, `core/commandScanner/`, `core/commandLauncher/` |
-| 数据库         | `core/lmdb/`, `api/shared/database.ts`                                                                         |
-| 剪贴板         | `managers/clipboardManager.ts`, `core/native/index.ts`                                                         |
-| 窗口管理       | `managers/windowManager.ts`, `core/detachedWindowManager.ts`                                                   |
-| 超级面板       | `core/superPanelManager.ts`, `components/SuperPanel.vue`                                                       |
-| 本地兼容入口   | `src/main/api/renderer/localCapabilities.ts`, `src/main/api/plugin/localUserCapabilities.ts`                   |
-| Git 镜像       | `src/main/core/gitMirror/`, `src/shared/gitMirrorTypes.ts`                                                     |
-| 历史云同步     | `core/sync/`, `api/renderer/sync.ts`（保留源码，不代表本地版启动时启用）                                       |
-| 插件 AI        | `api/plugin/ai.ts`, `api/renderer/aiModels.ts`                                                                 |
-| 浏览器自动化   | `core/zbrowser/`, `api/plugin/zbrowser.ts`                                                                     |
-| 内置插件       | `internal-plugins/`, `core/internalPlugins.ts`, `core/internalPluginLoader.ts`                                 |
-| 本地版更新提示 | `src/main/api/localUpdater.ts`, `src/main/core/localEdition/upstreamUpdateNotice.ts`                           |
-| MCP 服务       | `core/mcpServer.ts`, `api/plugin/tools.ts`                                                                     |
-| 翻译           | `core/translationManager.ts`                                                                                   |
-| IPC 通信       | `api/index.ts`（统一初始化），`api/shared/`、`api/renderer/`、`api/plugin/`                                    |
-| UI 样式        | `src/renderer/src/style.css`（通用控件类：.btn .input .select .toggle .card）                                  |
+| 修改目标         | 关键文件                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| 插件系统         | `managers/pluginManager.ts`, `api/renderer/plugins.ts`, `api/plugin/`, `resources/preload.js`                  |
+| 搜索逻辑         | `stores/commandDataStore.ts`, `components/search/SearchResults.vue`, `composables/useSearchResults.ts`         |
+| 指令管理         | `api/renderer/commands.ts`, `api/renderer/commandMatchers.ts`, `core/commandScanner/`, `core/commandLauncher/` |
+| 数据库           | `core/lmdb/`, `api/shared/database.ts`                                                                         |
+| 剪贴板           | `managers/clipboardManager.ts`, `core/native/index.ts`                                                         |
+| 窗口管理         | `managers/windowManager.ts`, `core/detachedWindowManager.ts`                                                   |
+| 超级面板         | `core/superPanelManager.ts`, `components/SuperPanel.vue`                                                       |
+| 本地兼容入口     | `src/main/api/renderer/localCapabilities.ts`, `src/main/api/plugin/localUserCapabilities.ts`                   |
+| Git 镜像         | `src/main/core/gitMirror/`, `src/shared/gitMirrorTypes.ts`                                                     |
+| 历史云同步       | `core/sync/`, `api/renderer/sync.ts`（保留源码，不代表本地版启动时启用）                                       |
+| 插件 AI          | `api/plugin/ai.ts`, `api/renderer/aiModels.ts`                                                                 |
+| 浏览器自动化     | `core/zbrowser/`, `api/plugin/zbrowser.ts`                                                                     |
+| 内置插件         | `internal-plugins/`, `core/internalPlugins.ts`, `core/internalPluginLoader.ts`                                 |
+| 自有版本更新     | `src/main/api/updater.ts`, `src/main/api/electronUpdater.ts`, `src/main/api/platformUpdater/windows.ts`        |
+| 手动上游研究提醒 | `src/main/api/localUpdater.ts`, `src/main/core/localEdition/upstreamUpdateNotice.ts`                           |
+| MCP 服务         | `core/mcpServer.ts`, `api/plugin/tools.ts`                                                                     |
+| 翻译             | `core/translationManager.ts`                                                                                   |
+| IPC 通信         | `api/index.ts`（统一初始化），`api/shared/`、`api/renderer/`、`api/plugin/`                                    |
+| UI 样式          | `src/renderer/src/style.css`（通用控件类：.btn .input .select .toggle .card）                                  |
 
 ## 添加新功能指南
 

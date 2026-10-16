@@ -24,7 +24,7 @@ import pluginToolsAPI from './tools'
 import databaseAPI from '../shared/database'
 import { analyzeImage } from '../shared/imageAnalysis'
 import { unavailableOfficialCapability } from '../../../shared/localEdition'
-import localUpdater from '../localUpdater'
+import updater from '../updater'
 import {
   COMMAND_ALIASES_KEY,
   normalizeCommandAliases,
@@ -1269,46 +1269,47 @@ export class InternalPluginAPI {
     })
 
     // ==================== 应用更新 API ====================
-    // 保留发送方权限检查，仅将主动查询交给本地提醒层，不初始化原版更新客户端。
+    // 保留发送方权限检查，所有更新操作只交给自有 GitHub 更新器。
     /**
-     * 为受信任的内置插件执行一次用户主动发起的上游稳定版检查。
+     * 为受信任的内置插件检查 CAI.Tools 自有预发布版本。
      * @param event 用于验证插件身份的 IPC 事件。
-     * @returns 兼容旧调用方的只读版本检查结果。
+     * @returns 自有版本检查结果。
      * @throws 调用方不是内置插件时拒绝访问。
      */
     ipcMain.handle('internal:updater-check-update', async (event) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:updater-check-update')
       }
-      return localUpdater.checkUpdate()
+      return updater.checkUpdate()
     })
 
     /**
-     * 在校验内置插件权限后返回本地版不支持原版安装的明确结果。
+     * 在校验内置插件权限后下载并安装已检查的自有更新。
      * @param event 用于验证插件身份的 IPC 事件。
      * @param sourceID 旧调用方提供的下载源编号。
-     * @returns 官方更新能力不可用的失败结果。
+     * @returns 下载与安装启动结果。
      * @throws 调用方不是内置插件时拒绝访问。
      */
     ipcMain.handle('internal:updater-start-update', async (event, sourceID?: number) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:updater-start-update')
       }
-      return localUpdater.startUpdate(sourceID)
+      return updater.startUpdate(sourceID)
     })
 
     /**
-     * 兼容受信任插件的旧自动检查设置，并明确返回实际关闭状态。
+     * 更新受信任插件请求的自动检查开关。
      * @param event 用于验证插件身份的 IPC 事件。
      * @param enabled 旧调用方请求的开关状态。
-     * @returns 请求已处理但 enabled 固定为 false 的结果。
+     * @returns 已应用的开关状态。
      * @throws 调用方不是内置插件时拒绝访问。
      */
     ipcMain.handle('internal:updater-set-auto-check', async (event, enabled: boolean) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
         throw new PermissionDeniedError('internal:updater-set-auto-check')
       }
-      return localUpdater.setAutoCheck(enabled)
+      updater.setAutoCheck(enabled)
+      return { success: true, enabled }
     })
 
     // ==================== 其他 API ====================

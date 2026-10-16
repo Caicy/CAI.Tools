@@ -110,7 +110,6 @@ describe('upstream stable version notice', () => {
     expect(vi.getTimerCount()).toBe(0)
     localUpdater.init({} as any)
     localUpdater.init({} as any)
-    expect(localUpdater.setAutoCheck(true)).toEqual({ success: true, enabled: false })
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
     localUpdater.cleanup()
     expect(mocks.fetch).not.toHaveBeenCalled()
@@ -152,28 +151,11 @@ describe('upstream stable version notice', () => {
     }
   )
 
-  it('preserves the old explicit check contract without opening an updater window', async () => {
-    respond()
-    localUpdater.init({} as any)
-    expect(await handler('handle', 'updater:check-update')({})).toMatchObject({
-      success: true,
-      updateAvailable: true,
-      hasUpdate: true,
-      updateInfo: { version: '3.3.0', releaseUrl }
-    })
-    expect(mocks.openExternal).not.toHaveBeenCalled()
-  })
-
   it.each([403, 429, 500])('returns unavailability for HTTP %s', async (status) => {
     mocks.fetch.mockResolvedValue({ ok: false, status })
     expect(await notice.checkUpstreamUpdate()).toMatchObject({
       kind: 'unavailable',
       message: expect.any(String)
-    })
-    expect(await localUpdater.checkUpdate()).toMatchObject({
-      success: false,
-      updateAvailable: false,
-      hasUpdate: false
     })
   })
 
@@ -215,34 +197,10 @@ describe('upstream stable version notice', () => {
     expect(await notice.checkUpstreamUpdate()).toMatchObject({ kind: 'unavailable' })
   })
 
-  it('covers every legacy handler/event and blocks installation, download and old windows', async () => {
+  it('does not register self-update channels in the upstream research facade', () => {
     localUpdater.init({} as any)
-    const source = fs.readFileSync(path.resolve('src/main/api/updater.ts'), 'utf8')
-    const oldChannels = [...source.matchAll(/ipcMain\.(handle|on)\(\s*'([^']+)'/g)]
-    expect(oldChannels).toHaveLength(11)
-    for (const [, mode, channel] of oldChannels) {
-      const call = handler(mode as 'handle' | 'on', channel)
-      if (channel === 'updater:check-update') continue
-      if (mode === 'on') {
-        // sendSync 读取事件字段；普通 send 不接收监听器的 JavaScript 返回值。
-        const event = { returnValue: undefined }
-        expect(call(event, 1)).toBeUndefined()
-        expect(event.returnValue).toMatchObject({
-          success: false,
-          code: 'OFFICIAL_CAPABILITY_UNAVAILABLE'
-        })
-        continue
-      }
-      const result = await call({}, 1)
-      if (channel === 'updater:get-download-status') {
-        expect(result).toMatchObject({ status: 'idle', hasDownloaded: false, hasUpdate: false })
-      } else {
-        expect(result).toMatchObject({ success: false, code: 'OFFICIAL_CAPABILITY_UNAVAILABLE' })
-      }
-    }
-    expect(mocks.fetch).not.toHaveBeenCalled()
-    expect(mocks.openExternal).not.toHaveBeenCalled()
-    expect(mocks.handle.mock.calls.some(([channel]) => channel.startsWith('internal:'))).toBe(false)
+    expect(mocks.handle.mock.calls.some(([channel]) => channel.startsWith('updater:'))).toBe(false)
+    expect(mocks.on).not.toHaveBeenCalled()
   })
 
   it.each([

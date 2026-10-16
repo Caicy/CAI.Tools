@@ -6,7 +6,7 @@ on:
       version:
         description: '试用版本号（须与此分支 package.json 一致）'
         required: true
-        default: '3.2.0-local.3'
+        default: '3.2.0-local.4'
       publish_release:
         description: '发布 Windows 安装包和 ZIP 到 GitHub Release'
         type: boolean
@@ -28,6 +28,7 @@ jobs:
     name: Windows x64
     runs-on: windows-latest
     timeout-minutes: 40
+    if: github.repository == 'Caicy/CAI.Tools'
     steps:
       - name: Check out source and API types
         uses: actions/checkout@v4
@@ -38,17 +39,36 @@ jobs:
         shell: pwsh
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
+          IS_PRERELEASE: ${{ inputs.prerelease }}
         run: |
           # Reject mismatched tags rather than silently publishing a different package version.
           $version = (Get-Content -LiteralPath package.json -Raw | ConvertFrom-Json).version
           if ($env:REQUESTED_VERSION.TrimStart('v') -ne $version) {
             throw "Requested version must match package.json ($version)."
           }
+          if ($version -notmatch '^\d+\.\d+\.\d+-local\.\d+$' -or $env:IS_PRERELEASE -ne 'true') {
+            throw 'local update channel requires a local.x version and prerelease=true.'
+          }
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 11.18.0
+
+      - name: Reject reused release tags
+        if: inputs.publish_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Never replace an installed version's metadata or artifacts in place.
+            const version = JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version
+            try {
+              await github.rest.git.getRef({ ...context.repo, ref: `tags/v${version}` })
+            } catch (error) {
+              if (error.status === 404) return
+              throw error
+            }
+            throw new Error(`Tag v${version} already exists; increment the local version.`)
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -61,6 +81,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Run unit and release-contract tests
+        run: pnpm test
 
       - name: Build Windows source
         env:
@@ -88,6 +111,9 @@ jobs:
             Remove-Item -LiteralPath $manifestBackup
           }
 
+      - name: Verify updater metadata and packaged identity
+        run: node scripts/verify-windows-update.mjs dist
+
       - name: Verify packages and create checksums
         id: metadata
         shell: pwsh
@@ -99,6 +125,8 @@ jobs:
             throw 'Expected exactly one Windows installer and one ZIP package.'
           }
           $packages = @($installers) + @($archives)
+          $packages += @(Get-ChildItem -LiteralPath dist -Filter 'local.yml' -File)
+          $packages += @(Get-ChildItem -LiteralPath dist -Filter '*-setup.exe.blockmap' -File)
           $checksums = foreach ($package in $packages) {
             $digest = Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256
             '{0}  {1}' -f $digest.Hash.ToLowerInvariant(), $package.Name
@@ -118,9 +146,12 @@ jobs:
           path: |
             dist/*-setup.exe
             dist/*.zip
+            dist/local.yml
+            dist/*-setup.exe.blockmap
             dist/SHA256SUMS.txt
 
       - name: Publish GitHub Release
+        id: release
         if: inputs.publish_release
         uses: softprops/action-gh-release@v2
         with:
@@ -128,28 +159,35 @@ jobs:
           tag_name: ${{ steps.metadata.outputs.tag }}
           target_commitish: ${{ github.sha }}
           prerelease: ${{ inputs.prerelease }}
+          draft: true
           make_latest: false
           fail_on_unmatched_files: true
           body: |
-            CAI.Tools Windows x64 本地版试用构建。
+            CAI.Tools Windows x64 本地版预发布构建。
 
-            新增“字符串处理”内置插件，重启后可在搜索框输入“字符串处理”使用：
+            首次安装请使用 *-setup.exe。启用自有自动更新的安装版可在软件内检查、下载和安装后续 local.x 版本。
+            ZIP 为便携分发，不支持软件内替换；请先使用完整安装程序安装。
+            更新保留本地设置、插件和数据库。更新元数据 local.yml、差分 blockmap 与 SHA256SUMS.txt 随本版本发布。
+            旧 local.1～local.3 首次切换仍需手动安装启用更新的完整版本。
 
-            - SQL IN 拼接：多行或表格列转逗号列表，自动区分数字与文本，转义单引号，保留长数字精度和前导零编号。
-            - 大小写与命名：小写、大写、大驼峰、小驼峰、下划线和短横线。
-            - Unicode 与中文双向转换，支持代理对和扩展码点。
-            - 行整理：去重、去空行、去首尾空格。
-
-            支持实时预览、剪贴板导入与复制、Ctrl/Cmd+Enter、明暗主题；输入在本机处理，不保存历史。
-
-            下载 `*-setup.exe` 安装，或下载 ZIP 解压试用。SHA256 校验值见 SHA256SUMS.txt。
-
-            保留本地免登录版、插件兼容版本修复、Git 镜像协议 B1、插件数据投影与 AI 凭据隔离 B2。Git 自动同步和多机迁移尚未完成。
-
-            源码验证：772 项单元测试通过，Electron E2E 6 项通过、3 项原有账号流程跳过，主项目类型检查通过。
-
-            此构建尚需实际安装试用验证。
+            本流水线校验更新制品的版本、来源和摘要；实际安装升级验证结果请查阅对应版本的验收记录。
           files: |
             dist/*-setup.exe
             dist/*.zip
+            dist/local.yml
+            dist/*-setup.exe.blockmap
             dist/SHA256SUMS.txt
+
+      - name: Expose completed release to update clients
+        if: inputs.publish_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Keep the Atom feed unchanged until every required artifact has uploaded.
+            await github.rest.repos.updateRelease({
+              ...context.repo,
+              release_id: Number('${{ steps.release.outputs.id }}'),
+              draft: false,
+              prerelease: true,
+              make_latest: 'false'
+            })

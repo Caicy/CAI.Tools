@@ -14,6 +14,7 @@ import settingsAPI from './renderer/settings'
 import storageAPI from './renderer/storage'
 import { registerLocalCapabilities } from './renderer/localCapabilities'
 import localUpdater from './localUpdater'
+import updater from './updater'
 import systemAPI from './renderer/system'
 import { systemSettingsAPI } from './renderer/systemSettings'
 import windowAPI from './renderer/window'
@@ -120,8 +121,9 @@ class APIManager {
     systemSettingsAPI.init()
     // 仅注册旧账号/同步入口的明确失败响应，不创建同步客户端。
     registerLocalCapabilities()
-    // 仅注册用户主动查询上游版本的入口，不恢复原版自动更新器。
+    // 上游提醒与自有 GitHub 更新分别注册，更新器不加载官方服务目录。
     localUpdater.init(mainWindow)
+    updater.init(mainWindow)
     localShortcutsAPI.init(mainWindow)
     localShortcutsAPI.setCommandsCacheInvalidator(() => appsAPI.invalidateCommandsCache(false))
 
