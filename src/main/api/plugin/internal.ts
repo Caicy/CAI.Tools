@@ -77,11 +77,40 @@ export class InternalPluginAPI {
 
   /**
    * 初始化内置插件专用 API，并注册对应的 IPC 通道。
+   * @param mainWindow 宿主主窗口。
+   * @param pluginManager 插件管理及授权信息。
+   * @returns 无返回值。
    */
   public init(mainWindow: Electron.BrowserWindow, pluginManager: PluginManager): void {
     this.mainWindow = mainWindow
     this.pluginManager = pluginManager
+    // 未知 WebContents 不享有浮窗配置权限。
+    floatingBallManager.setSettingsAuthorizer(
+      /**
+       * 按宿主身份或明确插件授权判断配置权限。
+       * @param event 配置调用事件。
+       * @returns 是否允许配置。
+       */
+      (event) =>
+        event.sender === mainWindow.webContents ||
+        pluginManager.getPluginInfoByWebContents(event.sender)?.canUseInternalApi === true
+    )
     this.setupIPC()
+  }
+
+  /**
+   * 验证浮窗配置调用来自主窗口或明确授权的插件主 frame。
+   * @param event 当前调用事件。
+   * @returns 无返回值。
+   * @throws 身份不满足时抛出权限错误。
+   */
+  private requireDesktopPetSettings(event: IpcMainInvokeEvent): void {
+    const allowed =
+      event.sender === this.mainWindow?.webContents ||
+      this.pluginManager?.getPluginInfoByWebContents(event.sender)?.canUseInternalApi === true
+    if (!allowed || event.senderFrame !== event.sender.mainFrame) {
+      throw new PermissionDeniedError('desktop-pet-settings')
+    }
   }
 
   /**
@@ -89,13 +118,57 @@ export class InternalPluginAPI {
    * @returns 无返回值
    */
   private setupIPC(): void {
-    // ==================== 数据库 API (ZTOOLS/ 命名空间) ====================
-    ipcMain.handle('internal:db-put', (event, key: string, value: any) => {
-      if (!requireInternalPlugin(this.pluginManager, event)) {
-        throw new PermissionDeniedError('internal:db-put')
+    ipcMain.handle(
+      'internal:get-desktop-pet-config',
+      /**
+       * 验证身份后返回桌面入口快照。
+       * @param event IPC调用事件。
+       * @returns 当前配置与错误信息。
+       * @throws 未授权时拒绝请求。
+       */
+      (event) => {
+        this.requireDesktopPetSettings(event)
+        return floatingBallManager.getSnapshot()
       }
-      return databaseAPI.dbPut(key, value)
-    })
+    )
+    ipcMain.handle(
+      'internal:set-desktop-pet-config',
+      /**
+       * 验证身份后保存桌面入口配置。
+       * @param event IPC调用事件。
+       * @param config 待验证配置。
+       * @returns 保存后的配置快照。
+       * @throws 身份、参数或持久化无效时拒绝请求。
+       */
+      (event, config: unknown) => {
+        this.requireDesktopPetSettings(event)
+        return floatingBallManager.setPetConfig(config)
+      }
+    )
+    // ==================== 数据库 API (ZTOOLS/ 命名空间) ====================
+    ipcMain.handle(
+      'internal:db-put',
+      /**
+       * 保存宿主设置；宠物配置由专用接口管理，避免过期通用表单覆盖。
+       * @param event 当前 IPC 事件。
+       * @param key 宿主数据键。
+       * @param value 待保存的数据。
+       * @returns 数据库写入结果。
+       * @throws 未授权或数据库写入异常时抛错。
+       */
+      (event, key: string, value: any) => {
+        if (!requireInternalPlugin(this.pluginManager, event)) {
+          throw new PermissionDeniedError('internal:db-put')
+        }
+        // 在同一主进程调用内保留最新宠物字段，消除页面先读后写的竞态。
+        if (key === 'settings-general' && value && typeof value === 'object') {
+          const current = databaseAPI.dbGet(key)
+          if (current?.desktopPet !== undefined)
+            value = { ...value, desktopPet: current.desktopPet }
+        }
+        return databaseAPI.dbPut(key, value)
+      }
+    )
 
     ipcMain.handle('internal:db-get', (event, key: string) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {

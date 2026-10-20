@@ -1,0 +1,60 @@
+# 桌面宠物 P0 测试报告
+
+日期：2026-10-20
+
+## 已执行并通过
+
+| 检查                                                                                                                                                                                    | 结果                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `pnpm exec vitest run tests/main/desktopPetManifest.test.ts tests/main/desktopPetGeometry.test.ts tests/renderer/desktopPetInteraction.test.ts tests/renderer/desktopPetPlayer.test.ts` | 通过：4 个文件、29 个测试        |
+| `pnpm typecheck`                                                                                                                                                                        | 通过：node 与 web 类型检查均通过 |
+| `pnpm --dir internal-plugins/setting exec vue-tsc --noEmit`                                                                                                                             | 通过                             |
+| `pnpm test:e2e tests/e2e/desktop-pet.spec.ts --timeout=180000`                                                                                                                          | 通过：1 个测试，约 3.2 分钟      |
+| `pnpm test`                                                                                                                                                                             | 通过：99 个文件、890 个测试      |
+
+E2E 使用源码 Electron、临时 `ZTOOLS_DATA_ROOT`、临时 `ZTOOLS_LEGACY_USER_DATA_PATH`，并设置 `ZTOOLS_E2E_DESKTOP_PET=1`；未打包应用、未访问真实用户数据。构建产物确认包含正式 `atlas.png`（1536×1024，约 1.9 MB）。
+
+## E2E 实际覆盖
+
+- 缺省配置为 pet 模式，设置页显示“小薄荷 · 桌面宠物”而非外观选择器。
+- 启用桌面入口并切换到 pet 模式。
+- 旧 ball 配置迁移为 pet，并保留 large 尺寸和 paused 偏好（由配置规范化单测覆盖）。
+- 宠物页面 bridge 存在，atlas 成功加载并产生首帧/动作数据。
+- 无交互时保持 idle 首帧至少 500ms；直接截取宠物 WebContentsView，检查正面眼睛叠层。
+- 通过测试 IPC 注入归一化 gaze，验证待机帧不变、眼睛区域像素变化集中在眼睛附近；静止期间视线保持稳定。
+- 暂停时拒绝 gaze 更新；恢复后继续响应 gaze。
+- 重载宠物 WebContentsView 后重新订阅 gaze 并响应新事件。
+- 合成拖动指针事件进入 running-right，动作帧随时间推进；松开后回到 idle。
+- 关闭状态下的 large/paused 宠物配置重启后仍保留，且不会意外创建浮窗。
+- 宠物配置重启后仍为 pet、large、未暂停。
+- 浮窗保持 enabled 状态直接调用 `app.close()`，验证退出清理完成且重启后仍恢复 enabled。
+- 暂停期间及恢复后的 idle 状态均保持 canvas `data-frame` 不推进；拖动动作单独验证帧推进，并在重启前恢复 `paused=false`。
+- 使用不含 `desktopPet` 的过期 `settings-general` 写入后，最新宠物配置仍被保留。
+- finally 保留关闭浮窗的兜底清理，避免失败路径遗留窗口。
+
+## 单元测试覆盖
+
+- 清单安全路径、网格尺寸、像素预算、四种 P0 动作、帧数和时长边界。
+- 旧 ball 配置迁移、默认 pet、尺寸和暂停字段。
+- 负坐标显示器、最大相交工作区、无交集回主屏、窗口大于工作区和小数坐标夹取。
+- 循环/非循环帧累计时间、边界帧、负时间。
+- 单击延迟、双击取消单击、拖拽/失焦后的点击取消。
+
+## 未覆盖或不能由自动化证明
+
+- Windows 真实资源管理器文件拖入、拖出浮窗后释放以及系统级 drop 交付。
+- 透明空白区域穿透到底层窗口、快速进入角色命中、鼠标不抢其他应用焦点。
+- 100%/150% DPI、多显示器添加/移除/负坐标的真实桌面行为。
+- 原生右键菜单、系统级单击/双击与拖动手势的物理鼠标验收。
+- 系统光标采样与 gaze IPC 的端到端连通由自动化注入消息代替，仍需实机移动鼠标确认眼睛跟随真实光标。
+- 长时间 CPU、私有内存和暂停状态下的性能预算。
+
+以上项目需要 Windows 实机人工验收；gaze 事件的自动化覆盖证明渲染页订阅与眼睛绘制，合成指针事件不证明系统光标采样或物理鼠标行为。
+
+## 其他结果
+
+本轮曾尝试通过 `setDesktopPetConfig` 写入旧 ball 配置，但该公开入口会立即规范化为 pet；因此最终将旧 ball 迁移断言放在 `normalizeDesktopPetConfig` 单测中，E2E 保留真实可用入口能够证明的默认、关闭状态和重启行为。
+
+此前一次 E2E 在重启后误把先创建的宠物浮窗当成宿主窗口；现改为按宿主专属搜索框定位窗口，专项测试通过。首次 120 秒超时及后续诊断过程不改变本次通过结果。
+
+受限沙箱中的首次 `pnpm test` 因 Windows `EPERM rename` 未能开始断言；在获准的本机执行环境重跑后，全量 Vitest 通过（99 个文件、890 个测试）。

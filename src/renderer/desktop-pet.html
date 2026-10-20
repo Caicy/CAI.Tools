@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*"
+    />
+    <title>CAI.Tools 桌面宠物</title>
+  </head>
+  <body>
+    <div id="surface" aria-label="桌面工具入口">
+      <div id="ball"><span id="letter">Z</span></div>
+      <canvas id="pet" hidden></canvas>
+    </div>
+    <script type="module" src="/src/desktopPet/main.ts"></script>
+  </body>
+</html>

@@ -158,7 +158,7 @@ app.whenReady().then(async () => {
   if (!isE2ETest) windowManager.registerShortcut()
 
   // 初始化悬浮球（从配置决定是否显示）
-  if (!isE2ETest) await floatingBallManager.init()
+  if (!isE2ETest || process.env.ZTOOLS_E2E_DESKTOP_PET === '1') await floatingBallManager.init()
 
   // 自动启动已配置的"跟随主程序同时启动运行"的插件
   if (mainWindow && !isE2ETest) {
@@ -226,41 +226,52 @@ app.on('will-quit', () => {
   mcpServer.stop()
 })
 
-app.on('before-quit', (event) => {
-  // 自动化关闭应用时不拦截退出流程，避免测试进程残留。
-  if (isE2ETest) return
-
-  // 检查是否是通过托盘菜单主动退出
-  if (!windowManager.getQuitting()) {
-    // 不是主动退出（如 Command+Q），阻止退出
-    event.preventDefault()
-    console.log('[Main] 阻止了 Command+Q 退出，请使用托盘菜单退出')
-    const hasActivePlugin = pluginManager.getCurrentPluginPath() !== null
-    // 仅在 killPlugin 内置快捷键启用时才隐藏窗口；
-    // 禁用时意味着用户希望把 Cmd+Q 用作其他用途（如呼出快捷键），保持窗口可见
-    // 插件模式下的 Cmd+Q 由 pluginManager 负责终止插件并返回搜索页，这里不再隐藏主窗口
-    if (windowManager.isKillPluginShortcutEnabled() && !hasActivePlugin) {
-      windowManager.hideWindow(false)
+app.on(
+  'before-quit',
+  /**
+   * 区分自动化关闭与用户退出，先释放会阻止关闭的浮窗。
+   * @param event 可阻止退出的应用事件。
+   * @returns 无返回值。
+   */
+  (event) => {
+    // 浮窗专项 E2E 启用了关闭保护，必须在窗口 close 之前清理，不能等 will-quit。
+    if (isE2ETest) {
+      floatingBallManager.cleanup()
+      return
     }
-  } else {
-    // 主动退出时，同步销毁所有窗口
-    console.log('[Main] 开始同步销毁所有窗口...')
 
-    // 先清理悬浮球窗口（避免 close 事件干扰）
-    floatingBallManager.cleanup()
-
-    // 通过 Electron API 获取所有 webContents 并销毁（包括主窗口、分离窗口、插件视图）
-    const allContents = webContents.getAllWebContents()
-    console.log('[Main] 找到', allContents.length, '个 webContents')
-    for (const contents of allContents) {
-      if (!contents.isDestroyed()) {
-        ;(contents as any).destroy()
+    // 检查是否是通过托盘菜单主动退出
+    if (!windowManager.getQuitting()) {
+      // 不是主动退出（如 Command+Q），阻止退出
+      event.preventDefault()
+      console.log('[Main] 阻止了 Command+Q 退出，请使用托盘菜单退出')
+      const hasActivePlugin = pluginManager.getCurrentPluginPath() !== null
+      // 仅在 killPlugin 内置快捷键启用时才隐藏窗口；
+      // 禁用时意味着用户希望把 Cmd+Q 用作其他用途（如呼出快捷键），保持窗口可见
+      // 插件模式下的 Cmd+Q 由 pluginManager 负责终止插件并返回搜索页，这里不再隐藏主窗口
+      if (windowManager.isKillPluginShortcutEnabled() && !hasActivePlugin) {
+        windowManager.hideWindow(false)
       }
-    }
+    } else {
+      // 主动退出时，同步销毁所有窗口
+      console.log('[Main] 开始同步销毁所有窗口...')
 
-    console.log('[Main] 所有窗口同步销毁完成')
+      // 先清理悬浮球窗口（避免 close 事件干扰）
+      floatingBallManager.cleanup()
+
+      // 通过 Electron API 获取所有 webContents 并销毁（包括主窗口、分离窗口、插件视图）
+      const allContents = webContents.getAllWebContents()
+      console.log('[Main] 找到', allContents.length, '个 webContents')
+      for (const contents of allContents) {
+        if (!contents.isDestroyed()) {
+          ;(contents as any).destroy()
+        }
+      }
+
+      console.log('[Main] 所有窗口同步销毁完成')
+    }
   }
-})
+)
 
 app.on('activate', () => {
   if (focusAccessibilityPermissionWindow()) return

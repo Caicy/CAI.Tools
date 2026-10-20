@@ -277,6 +277,8 @@ describe('local plugin AI capability boundary', () => {
       exports,
       require: (specifier: string) => {
         if (specifier === 'electron') return { ipcMain: mocks }
+        if (specifier.includes('floatingBallManager'))
+          return { default: { setSettingsAuthorizer: vi.fn() } }
         if (specifier.includes('/aiModels')) return { default: renderer }
         return { default: {} }
       }

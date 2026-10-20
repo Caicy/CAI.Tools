@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { normalizeDesktopPetConfig } from '@shared/desktopPetTypes'
 import {
   DEFAULT_AVATAR,
   DEFAULT_PLACEHOLDER,
@@ -276,6 +277,38 @@ const showTrayIcon = ref(true)
 // 悬浮球设置
 const floatingBallEnabled = ref(false)
 const floatingBallLetter = ref('Z')
+const desktopPet = ref(normalizeDesktopPetConfig(null))
+const desktopPetError = ref<string | null>(null)
+const desktopPetSaving = ref(false)
+
+/**
+ * 从宿主读取实际配置，供加载与失败回滚使用。
+ * @returns 配置读取完成的 Promise。
+ */
+async function refreshDesktopPet(): Promise<void> {
+  const snapshot = await window.ztools.internal.getDesktopPetConfig()
+  desktopPet.value = snapshot.config
+  desktopPetError.value = snapshot.error
+}
+
+/**
+ * 保存外观选项，失败时恢复宿主配置并向用户反馈。
+ * @returns 保存处理完成的 Promise。
+ */
+async function saveDesktopPet(): Promise<void> {
+  desktopPetSaving.value = true
+  try {
+    // 转成普通对象后传过 IPC，避免 Vue Proxy 无法结构化克隆。
+    const snapshot = await window.ztools.internal.setDesktopPetConfig({ ...desktopPet.value })
+    desktopPet.value = snapshot.config
+    desktopPetError.value = snapshot.error
+  } catch (reason) {
+    error(reason instanceof Error ? reason.message : '宠物设置保存失败')
+    await refreshDesktopPet().catch(console.error)
+  } finally {
+    desktopPetSaving.value = false
+  }
+}
 
 // 开机启动设置
 const launchAtLogin = ref(false)
@@ -1070,18 +1103,6 @@ async function handleFloatingBallChange(): Promise<void> {
   }
 }
 
-// 处理悬浮球文字变化
-async function handleFloatingBallLetterChange(): Promise<void> {
-  try {
-    const letter = floatingBallLetter.value.trim() || 'Z'
-    floatingBallLetter.value = letter
-    await window.ztools.internal.setFloatingBallLetter(letter)
-    console.log('悬浮球文字已更新:', letter)
-  } catch (err) {
-    console.error('更新悬浮球文字失败:', err)
-  }
-}
-
 // 处理窗口材质变化
 async function handleWindowMaterialChange(): Promise<void> {
   try {
@@ -1339,6 +1360,10 @@ async function getPlatformInfo(): Promise<void> {
  * 加载通用设置并应用当前页面负责的运行时状态。
  * @returns 设置加载和应用完成后结束的 Promise
  */
+/**
+ * 加载通用设置及桌面入口实际状态，兼容没有宠物配置的旧数据。
+ * @returns 设置加载完成的 Promise。
+ */
 async function loadSettings(): Promise<void> {
   try {
     // 加载数据库中的设置
@@ -1405,6 +1430,7 @@ async function loadSettings(): Promise<void> {
       // 悬浮球配置
       floatingBallEnabled.value = data.floatingBallEnabled ?? false
       floatingBallLetter.value = data.floatingBallLetter || 'Z'
+      desktopPet.value = normalizeDesktopPetConfig(data.desktopPet)
 
       // 终端打开配置
       terminal.value = data.terminal ?? 'default'
@@ -1417,6 +1443,8 @@ async function loadSettings(): Promise<void> {
 
       applyPrimaryColor(primaryColor.value, customColor.value)
     }
+
+    await refreshDesktopPet()
 
     // 获取当前实际注册的快捷键
     const currentShortcut = await window.ztools.internal.getCurrentShortcut()
@@ -2323,16 +2351,14 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- ==================== 悬浮球 ==================== -->
+    <!-- ==================== 桌面宠物 ==================== -->
     <div class="setting-group">
-      <h3 class="setting-group-title">悬浮球</h3>
+      <h3 class="setting-group-title">小薄荷 · 桌面宠物</h3>
 
       <div class="setting-item">
         <div class="setting-label">
-          <span>显示悬浮球</span>
-          <span class="setting-desc"
-            >在桌面显示一个置顶悬浮球，点击可快速启动/隐藏主界面，支持拖入文件到悬浮球</span
-          >
+          <span>显示桌面宠物</span>
+          <span class="setting-desc">小薄荷陪伴在桌面，点击打开主界面，也可以拖入文件</span>
         </div>
         <div class="setting-control">
           <label class="toggle">
@@ -2346,30 +2372,63 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="floatingBallEnabled" class="setting-item">
-        <div class="setting-label">
-          <span>悬浮球文字</span>
-          <span class="setting-desc">自定义悬浮球上显示的文字，默认为 Z</span>
+      <template v-if="floatingBallEnabled">
+        <div class="setting-item">
+          <div class="setting-label"><span>宠物大小</span></div>
+          <div class="setting-control">
+            <select
+              v-model="desktopPet.size"
+              class="select"
+              :disabled="desktopPetSaving"
+              @change="saveDesktopPet"
+            >
+              <option value="small">小</option>
+              <option value="medium">中</option>
+              <option value="large">大</option>
+            </select>
+          </div>
         </div>
-        <div class="setting-control">
-          <input
-            v-model="floatingBallLetter"
-            type="text"
-            class="input"
-            placeholder="Z"
-            maxlength="2"
-            style="width: 60px; text-align: center"
-            @blur="handleFloatingBallLetterChange"
-            @keyup.enter="handleFloatingBallLetterChange"
-          />
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>暂停动画</span><span class="setting-desc">暂停后仍可点击、拖动和接收文件</span>
+          </div>
+          <div class="setting-control">
+            <label class="toggle"
+              ><input
+                v-model="desktopPet.paused"
+                type="checkbox"
+                :disabled="desktopPetSaving"
+                @change="saveDesktopPet" /><span class="toggle-slider"></span
+            ></label>
+          </div>
         </div>
-      </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>{{ desktopPetError || '宠物显示' }}</span
+            ><span v-if="desktopPetError" class="setting-desc"
+              >暂时显示应急入口，可重试加载小薄荷。</span
+            >
+          </div>
+          <div class="setting-control">
+            <button class="btn" :disabled="desktopPetSaving" @click="refreshDesktopPet">
+              刷新状态</button
+            ><button
+              v-if="desktopPetError"
+              class="btn"
+              :disabled="desktopPetSaving"
+              @click="saveDesktopPet"
+            >
+              重试加载
+            </button>
+          </div>
+        </div>
+      </template>
 
       <div v-if="floatingBallEnabled" class="setting-item">
         <div class="setting-label">
-          <span>悬浮球双击目标指令</span>
+          <span>宠物双击目标指令</span>
           <span class="setting-desc"
-            >配置后双击悬浮球可直接进入对应指令，常用于快速打开 AI 对话等场景</span
+            >配置后双击小薄荷可直接进入对应指令，常用于快速打开 AI 对话等场景</span
           >
         </div>
         <div class="setting-control">

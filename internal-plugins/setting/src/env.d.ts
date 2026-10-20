@@ -2,6 +2,7 @@
 /// <reference types="@ztools-center/ztools-api-types" />
 
 import type { SearchWallpaperConfig } from '@shared/searchWallpaper'
+import type { DesktopPetConfig, PetSnapshot } from '@shared/desktopPetTypes'
 import type { LocalEditionInfo, UpstreamNotice } from '@shared/localEdition'
 import type {
   AiProviderInput,
@@ -430,6 +431,8 @@ declare global {
         setGameMode: (v: boolean) => Promise<void>
         setIgnoreHotkeysOnFullscreen: (v: boolean) => Promise<void>
         setFloatingBallEnabled: (enabled: boolean) => Promise<{ success: boolean }>
+        getDesktopPetConfig: () => Promise<PetSnapshot>
+        setDesktopPetConfig: (config: DesktopPetConfig) => Promise<PetSnapshot>
         setFloatingBallLetter: (letter: string) => Promise<{ success: boolean }>
         getFloatingBallLetter: () => Promise<string>
         setLaunchAtLogin: (enable: boolean) => Promise<void>

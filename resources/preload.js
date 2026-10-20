@@ -1628,6 +1628,18 @@ window.ztools = {
     },
 
     // ==================== 悬浮球 API ====================
+    /**
+     * 获取桌面宠物配置与运行错误。
+     * @returns {Promise<object>} 当前配置快照。
+     */
+    getDesktopPetConfig: () => electron.ipcRenderer.invoke('internal:get-desktop-pet-config'),
+    /**
+     * 保存桌面宠物配置并刷新浮窗。
+     * @param {object} config 宠物配置。
+     * @returns {Promise<object>} 保存后的配置快照。
+     */
+    setDesktopPetConfig: (config) =>
+      electron.ipcRenderer.invoke('internal:set-desktop-pet-config', config),
     setFloatingBallEnabled: async (enabled) =>
       await electron.ipcRenderer.invoke('floating-ball:set-enabled', enabled),
     getFloatingBallEnabled: async () =>

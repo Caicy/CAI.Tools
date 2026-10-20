@@ -199,6 +199,8 @@ describe('local capability compatibility boundary', () => {
         imported.push(specifier)
         if (specifier === 'electron') return { ipcMain: ipc }
         if (specifier.includes('localEdition')) return { unavailableOfficialCapability }
+        if (specifier.includes('floatingBallManager'))
+          return { default: { setSettingsAuthorizer: vi.fn() } }
         if (specifier === '../updater') return { default: selfUpdater }
         return { default: {} }
       }
