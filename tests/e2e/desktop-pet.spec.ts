@@ -73,6 +73,8 @@ async function sendPetGaze(
   app: ElectronApplication,
   point: { x: number; y: number }
 ): Promise<void> {
+  // 等待恢复动画后的系统采样完成，避免其首条消息覆盖测试注入。
+  await waitForAnimation(100)
   await app.evaluate(({ webContents }, gaze) => {
     const contents = webContents
       .getAllWebContents()
@@ -179,32 +181,55 @@ async function reloadPetPage(app: ElectronApplication): Promise<void> {
 /**
  * 发送合成拖动指针事件，验证拖动动作的动画时钟；不作为物理鼠标验收。
  * @param app 隔离的 Electron 实例。
+ * @param vertical 是否只沿垂直方向拖动。
  * @returns 页面当前动作及帧号。
  * @throws 宠物 WebContentsView 尚未创建时抛错。
  */
-async function startSyntheticPetDrag(app: ElectronApplication): Promise<{
+async function startSyntheticPetDrag(
+  app: ElectronApplication,
+  vertical = false
+): Promise<{
   action: string
   frame: string
 }> {
-  return app.evaluate(async ({ webContents }) => {
-    const contents = webContents
-      .getAllWebContents()
-      .find((item) => item.getURL().includes('desktop-pet.html'))
-    if (!contents || contents.isLoading()) throw new Error('宠物 WebContentsView 尚未就绪')
-    return contents.executeJavaScript(`(() => {
+  return app.evaluate(
+    /**
+     * 在宠物页面注入指定方向的指针手势。
+     * @param electron 当前 Electron 主进程模块。
+     * @param vertical 是否仅注入垂直位移。
+     * @returns 手势开始后的动作与帧号。
+     * @throws 宠物页面未就绪时抛错。
+     */ async ({ webContents }, vertical) => {
+      const contents = webContents
+        .getAllWebContents()
+        .find((item) => item.getURL().includes('desktop-pet.html'))
+      if (!contents || contents.isLoading()) throw new Error('宠物 WebContentsView 尚未就绪')
+      return contents.executeJavaScript(`(/**
+     * 发起合成指针手势并读取渲染状态。
+     * @returns 当前动作与帧号。
+     */ () => {
       const surface = document.querySelector('#surface')
       surface.setPointerCapture = () => {}
       surface.hasPointerCapture = () => false
       surface.releasePointerCapture = () => {}
-      const pointer = (type, screenX) => surface.dispatchEvent(new PointerEvent(type, {
-        bubbles: true, cancelable: true, pointerId: 777, button: 0, screenX, screenY: 30
+      /**
+       * 派发具有明确屏幕坐标的合成指针事件。
+       * @param type 指针事件类型。
+       * @param screenX 水平屏幕坐标。
+       * @param screenY 垂直屏幕坐标。
+       * @returns 事件是否未被取消。
+       */
+      const pointer = (type, screenX, screenY) => surface.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, pointerId: 777, button: 0, screenX, screenY
       }))
-      pointer('pointerdown', 10)
-      pointer('pointermove', 30)
+      pointer('pointerdown', 10, 30)
+      pointer('pointermove', ${vertical ? 10 : 30}, ${vertical ? 50 : 30})
       const canvas = document.querySelector('#pet')
       return { action: canvas.dataset.action, frame: canvas.dataset.frame }
     })()`)
-  })
+    },
+    vertical
+  )
 }
 
 /**
@@ -226,14 +251,14 @@ async function endSyntheticPetDrag(app: ElectronApplication): Promise<void> {
 }
 
 /**
- * 启动带浮窗模块的源码 Electron 测试实例。
+ * 启动带浮窗模块、固定系统光标输入的源码 Electron 测试实例。
  * @param dataRoot 本次测试的隔离数据目录。
  * @returns 已启动的 Electron 应用。
  */
 async function launchApp(dataRoot: string): Promise<ElectronApplication> {
   const legacyRoot = path.join(dataRoot, 'legacy')
   await fs.mkdir(legacyRoot, { recursive: true })
-  return electron.launch({
+  const app = await electron.launch({
     args: [projectRoot],
     cwd: projectRoot,
     env: {
@@ -247,6 +272,22 @@ async function launchApp(dataRoot: string): Promise<ElectronApplication> {
       ZTOOLS_SETTING_DEV_SERVER_URL: settingUrl
     }
   })
+  // 合成手势测试固定系统采样输入，避免测试期间用户移动鼠标造成竞争。
+  await app.evaluate(
+    /**
+     * 固定隔离实例的系统光标输入。
+     * @param electron 当前 Electron 主进程模块。
+     * @returns 无返回值。
+     */
+    ({ screen }) => {
+      /**
+       * 返回合成拖动测试的稳定光标位置。
+       * @returns DIP 屏幕坐标。
+       */
+      screen.getCursorScreenPoint = () => ({ x: 400, y: 300 })
+    }
+  )
+  return app
 }
 
 /**
@@ -479,8 +520,112 @@ test('桌面宠物配置、待机视线和交互动画在隔离源码 Electron �
       const dragNext = await getPetPageState(app)
       expect(dragNext?.action).toBe('running-right')
       expect(dragNext?.frame).not.toBe(dragStart.frame)
+      // Windows 移窗期间可能重复通知 resize；这些通知不能重置动画时钟。
+      const framesDuringMove = await app.evaluate(
+        /**
+         * 在重复布局通知期间采集动画帧。
+         * @param electron 当前 Electron 主进程模块。
+         * @returns 实际绘制过的不同帧号。
+         */
+        async ({ webContents }) => {
+          const contents = webContents.getAllWebContents().find(
+            /**
+             * 识别宠物页面。
+             * @param item 待检查的页面。
+             * @returns 是否为宠物页面。
+             */
+            (item) => item.getURL().includes('desktop-pet.html')
+          )!
+          return contents.executeJavaScript(`(/**
+         * 重复通知窗口布局并记录绘制结果。
+         * @returns 观察期间出现的帧号。
+         */ async () => {
+          const canvas = document.querySelector('#pet')
+          const frames = new Set()
+          for (let i = 0; i < 30; i++) {
+            window.dispatchEvent(new Event('resize'))
+            frames.add(canvas.dataset.frame)
+            await new Promise(/**
+             * 等待下一次布局通知。
+             * @param resolve 等待完成回调。
+             * @returns 定时器标识。
+             */ resolve => setTimeout(resolve, 16))
+          }
+          return [...frames]
+        })()`)
+        }
+      )
+      expect(framesDuringMove.length).toBeGreaterThan(2)
+      await capturePetView(app, testInfo, 'desktop-pet-drag')
       await endSyntheticPetDrag(app)
       await expect.poll(async () => getPetPageState(app)).toMatchObject({ action: 'idle' })
+      const verticalDrag = await startSyntheticPetDrag(app, true)
+      expect(verticalDrag.action).toBe('running-right')
+      await waitForAnimation(180)
+      expect((await getPetPageState(app))?.frame).not.toBe(verticalDrag.frame)
+      await endSyntheticPetDrag(app)
+
+      // 模拟原生窗口暂时产生不同比例，画布必须仍按素材比例绘制。
+      const petWindow = await app.evaluate(
+        /**
+         * 改变浮窗宽高比以验证素材比例保护。
+         * @param electron 当前 Electron 主进程模块。
+         * @returns 待恢复的窗口标识及原边界。
+         */
+        ({ BrowserWindow }) => {
+          const win = BrowserWindow.getAllWindows().find(
+            /**
+             * 识别宠物浮窗。
+             * @param item 待检查的窗口。
+             * @returns 是否承载宠物页面。
+             */
+            (item) => item.webContents.getURL().includes('desktop-pet.html')
+          )!
+          const bounds = win.getBounds()
+          win.setBounds({ ...bounds, width: 240, height: 240 })
+          return { id: win.id, bounds }
+        }
+      )
+      await expect
+        .poll(
+          /**
+           * 等待窗口调整后的实际画布状态。
+           * @returns 画布比例及 CSS 缩放模式。
+           */
+          async () =>
+            app!.evaluate(
+              /**
+               * 读取指定宠物窗口的画布布局。
+               * @param electron 当前 Electron 主进程模块。
+               * @param id 宠物窗口标识。
+               * @returns 页面计算的布局信息。
+               */
+              async ({ BrowserWindow }, id) => {
+                return BrowserWindow.fromId(id)!.webContents.executeJavaScript(`(/**
+             * 读取像素缓冲区比例和显示模式。
+             * @returns 当前画布布局。
+             */ () => {
+          const canvas = document.querySelector('#pet')
+          return { ratio: canvas.width / canvas.height, fit: getComputedStyle(canvas).objectFit }
+        })()`)
+              },
+              petWindow.id
+            )
+        )
+        .toMatchObject({ ratio: 0.75, fit: 'contain' })
+      await capturePetView(app, testInfo, 'desktop-pet-aspect-ratio')
+      await app.evaluate(
+        /**
+         * 恢复测试前的窗口布局。
+         * @param electron 当前 Electron 主进程模块。
+         * @param saved 保存的窗口标识和边界。
+         * @returns 无返回值。
+         */
+        ({ BrowserWindow }, saved) => {
+          BrowserWindow.fromId(saved.id)!.setBounds(saved.bounds)
+        },
+        petWindow
+      )
     } else {
       // atlas 尚未落盘时只验收安全降级，素材加载成功路径待资源加入后由同一断言覆盖。
       expect(snapshot.error).toEqual(expect.any(String))

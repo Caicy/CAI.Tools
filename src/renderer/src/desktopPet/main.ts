@@ -194,14 +194,23 @@ function setAction(next: PetAction): void {
 }
 
 /**
- * 按DPR重建画布，不拉伸角色比例。
+ * 仅在像素尺寸变化时重建等比例画布，保留正在播放的动作时钟。
  * @returns 无返回值。
  */
 function resize(): void {
-  canvas.width = Math.round(innerWidth * devicePixelRatio)
-  canvas.height = Math.round(innerHeight * devicePixelRatio)
+  if (!manifest) return
+  // 按素材比例生成缓冲区；窗口临时改变比例时由 object-fit 等比例容纳。
+  const scale = Math.min(innerWidth / manifest.cell.width, innerHeight / manifest.cell.height)
+  const width = Math.max(1, Math.round(manifest.cell.width * scale * devicePixelRatio))
+  const height = Math.max(1, Math.round(manifest.cell.height * scale * devicePixelRatio))
+  if (canvas.width === width && canvas.height === height) {
+    render()
+    return
+  }
+  canvas.width = width
+  canvas.height = height
   lastFrame = -1
-  lastTime = performance.now()
+  // render 自行累计经过的时间；移窗产生的 resize 不得吞掉帧间时间。
   render()
 }
 
@@ -292,7 +301,7 @@ surface.addEventListener(
 surface.addEventListener(
   'pointermove',
   /**
-   * 处理 pointermove 事件，维护对应的窗口或页面状态。
+   * 达到拖动阈值后立即播放跑步，水平位移决定朝向。
    * @param event 当前事件及其调用上下文。
    * @returns 无返回值。
    */
@@ -302,6 +311,8 @@ surface.addEventListener(
       gesture.dragging = true
       clicks.cancel()
       bridge.send({ type: 'dragStart', x: gesture.x, y: gesture.y })
+      // 纯垂直拖动也进入跑步，避免必须先横向移动才能播放动画。
+      setAction(event.screenX < gesture.x ? 'running-left' : 'running-right')
     }
     if (gesture.dragging && Math.abs(event.screenX - gesture.lastX) > 2) {
       setAction(event.screenX > gesture.lastX ? 'running-right' : 'running-left')

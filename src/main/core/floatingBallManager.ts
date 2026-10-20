@@ -554,7 +554,7 @@ class FloatingBallManager {
   }
 
   /**
-   * 用系统光标更新拖动、视线及透明区域命中，远离时降低频率。
+   * 用系统光标更新拖动、视线及透明区域命中；拖动保持配置尺寸，远离时降低频率。
    * @returns 无返回值。
    */
   private sampleCursor = (): void => {
@@ -562,12 +562,22 @@ class FloatingBallManager {
     const win = this.ballWindow
     if (!win || win.isDestroyed() || !win.isVisible()) return
     const cursor = screen.getCursorScreenPoint()
-    if (this.dragging)
-      win.setPosition(
-        Math.round(cursor.x - this.dragging.x),
-        Math.round(cursor.y - this.dragging.y),
-        false
+    if (this.dragging) {
+      const current = win.getBounds()
+      const target = {
+        x: Math.round(cursor.x - this.dragging.x),
+        y: Math.round(cursor.y - this.dragging.y),
+        ...this.windowSize()
+      }
+      // 不继承原生移窗后的尺寸偏差；光标停止时避免重复提交窗口布局。
+      if (
+        current.x !== target.x ||
+        current.y !== target.y ||
+        current.width !== target.width ||
+        current.height !== target.height
       )
+        win.setBounds(target, false)
+    }
     const bounds = win.getBounds()
     const x = cursor.x - bounds.x
     const y = cursor.y - bounds.y
