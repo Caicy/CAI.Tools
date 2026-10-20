@@ -56,6 +56,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
           'desktop-pet': resolve(__dirname, 'src/preload/desktop-pet.ts'),
+          'desktop-pet-runner': resolve(__dirname, 'src/preload/desktop-pet-runner.ts'),
           'afdian-payment': resolve(__dirname, 'src/preload/afdian-payment.ts')
         }
       }
@@ -80,6 +81,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
           'desktop-pet': resolve(__dirname, 'src/renderer/desktop-pet.html'),
+          'desktop-pet-runner': resolve(__dirname, 'src/renderer/desktop-pet-runner.html'),
           'detached-titlebar': resolve(__dirname, 'src/renderer/detached-titlebar.html'),
           'super-panel': resolve(__dirname, 'src/renderer/super-panel.html'),
           updater: resolve(__dirname, 'src/renderer/updater.html'),

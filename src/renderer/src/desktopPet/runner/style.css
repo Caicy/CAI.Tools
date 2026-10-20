@@ -1,0 +1,160 @@
+:root {
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  color: #eefbf3;
+  background: #172b29;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+}
+#game {
+  position: absolute;
+  width: 800px;
+  height: 240px;
+  transform-origin: top left;
+  border: 1px solid #638578;
+  border-radius: 12px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 70% 30%, #29473c, #152b29);
+}
+canvas {
+  position: absolute;
+  inset: 0;
+  width: 800px;
+  height: 240px;
+}
+header,
+footer {
+  position: absolute;
+  left: 20px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+header {
+  top: 12px;
+  height: 30px;
+}
+.brand {
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+.badge {
+  font-size: 11px;
+  color: #b0d3c4;
+  margin-left: 8px;
+  font-weight: 400;
+}
+.scores {
+  display: flex;
+  gap: 22px;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.muted {
+  color: #a1bdaf;
+  font-size: 11px;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+  border: 1px solid #607d70;
+  background: #25483c;
+  border-radius: 7px;
+  padding: 7px 14px;
+}
+button:hover {
+  background: #37614d;
+}
+button:focus-visible {
+  outline: 2px solid #b5f4bb;
+  outline-offset: 3px;
+}
+header button {
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  font-size: 18px;
+}
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+footer {
+  bottom: 9px;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #b1c9ba;
+  pointer-events: none;
+}
+kbd {
+  font: inherit;
+  border: 1px solid #557767;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+#overlay {
+  position: absolute;
+  inset: 47px 0 37px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: #142a276b;
+}
+.panel {
+  min-width: 380px;
+}
+.eyebrow {
+  margin: 0 0 4px;
+  color: #a4d7b7;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+}
+h1 {
+  font-size: 24px;
+  line-height: 1.2;
+  margin: 0 0 7px;
+  font-weight: 600;
+}
+#subtitle {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #c4d6cb;
+}
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+}
+#primary {
+  background: #b5e9b8;
+  color: #173a28;
+  border-color: #b5e9b8;
+  font-weight: 600;
+}
+.secondary {
+  background: transparent;
+}
+#save-status {
+  min-height: 14px;
+  margin: 5px 0 0;
+  font-size: 10px;
+  color: #ecd4a0;
+}
+[hidden] {
+  display: none !important;
+}

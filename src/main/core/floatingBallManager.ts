@@ -1,5 +1,6 @@
 import {
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   screen,
@@ -13,6 +14,7 @@ import databaseAPI from '../api/shared/database'
 import windowManager from '../managers/windowManager'
 import { getPreloadPath, getRendererPath } from '../utils/appBundlePath'
 import { clampPetBounds } from './desktopPet/windowGeometry'
+import { RunnerGameManager } from './desktopPet/runnerGameManager'
 import {
   normalizeDesktopPetConfig,
   type DesktopPetConfig,
@@ -42,6 +44,38 @@ class FloatingBallManager {
   private poll: ReturnType<typeof setTimeout> | undefined
   private deliveries = new Set<ReturnType<typeof setTimeout>>()
   private authorizeSettings: ((event: PetEvent) => boolean) | null = null
+  private quitting = false
+  private runner = new RunnerGameManager({
+    /**
+     * 游戏准备完成后释放宠物手势并临时隐藏，不保存开关。
+     * @returns 无返回值。
+     */
+    hide: () => {
+      this.dragging = null
+      this.pressed = this.fileHover = false
+      for (const timer of this.deliveries) clearTimeout(timer)
+      this.deliveries.clear()
+      this.ballWindow?.hide()
+    },
+    /**
+     * 按最新设置恢复桌宠，应用退出时不再显示。
+     * @returns 无返回值。
+     */
+    restore: () => {
+      if (!this.enabled || this.quitting) return
+      this.fitWindow()
+      this.ballWindow?.showInactive()
+    },
+    /**
+     * 提示游戏失败，保留宠物素材状态以便重试。
+     * @param message 可读错误说明。
+     * @returns 无返回值。
+     */
+    failed: (message) => {
+      if (!this.quitting)
+        void dialog.showMessageBox({ type: 'info', title: '小薄荷 · 桌面快跑', message })
+    }
+  })
 
   /**
    * 注入设置授权检查，未注册时默认拒绝。
@@ -378,6 +412,8 @@ class FloatingBallManager {
    * @returns 无返回值。
    */
   private createBallWindow(): void {
+    // 重复启用设置不能让游戏中的宠物重新出现。
+    if (this.runner.isActive()) return
     if (this.ballWindow) {
       this.ballWindow.showInactive()
       return
@@ -444,7 +480,9 @@ class FloatingBallManager {
        * 处理 ready-to-show 事件，维护对应的窗口或页面状态。
        * @returns 当前表达式的计算结果。
        */
-      () => win.showInactive()
+      () => {
+        if (!this.runner.isActive() && !this.quitting) win.showInactive()
+      }
     )
     win.on(
       'hide',
@@ -726,7 +764,7 @@ class FloatingBallManager {
   }
 
   /**
-   * 显示菜单，菜单期间保持鼠标事件。
+   * 显示桌宠操作与游戏入口，菜单期间保持鼠标事件。
    * @returns 无返回值。
    */
   private showContextMenu(): void {
@@ -735,6 +773,16 @@ class FloatingBallManager {
     this.menuOpen = true
     this.setIgnoring(false)
     const menu = Menu.buildFromTemplate([
+      {
+        label: '开始桌面快跑',
+        enabled: this.config.mode === 'pet' && !this.error,
+        /**
+         * 从当前宠物所在屏幕进入快跑。
+         * @returns 无返回值。
+         */
+        click: () => this.startRunner()
+      },
+      { type: 'separator' },
       {
         label: '显示/隐藏 CAI.Tools',
         /**
@@ -768,7 +816,7 @@ class FloatingBallManager {
   }
 
   /**
-   * 保存开关后创建或销毁浮窗。
+   * 保存开关后创建或销毁浮窗，关闭时同时结束游戏。
    * @param enabled 是否启用。
    * @returns 成功结果 Promise。
    * @throws 数据库写入失败时抛错。
@@ -777,7 +825,11 @@ class FloatingBallManager {
     this.persist({ floatingBallEnabled: enabled })
     this.enabled = enabled
     if (enabled) this.createBallWindow()
-    else this.destroyBallWindow()
+    else {
+      // 先关闭开关再结束游戏，阻止恢复回调重新显示宠物。
+      this.runner.close()
+      this.destroyBallWindow()
+    }
     return { success: true }
   }
 
@@ -835,14 +887,32 @@ class FloatingBallManager {
   }
 
   /**
-   * 退出时释放窗口和屏幕监听。
+   * 退出时释放游戏、宠物窗口和屏幕监听，不再恢复桌宠。
    * @returns 无返回值。
    */
   public cleanup(): void {
+    this.quitting = true
+    this.runner.close()
     this.destroyBallWindow()
     screen.removeListener('display-added', this.onDisplaysChanged)
     screen.removeListener('display-removed', this.onDisplaysChanged)
     screen.removeListener('display-metrics-changed', this.onDisplaysChanged)
+  }
+
+  /**
+   * 从有效桌宠启动单例游戏，不改变持久化偏好。
+   * @returns 无返回值。
+   */
+  private startRunner(): void {
+    if (
+      !this.enabled ||
+      this.quitting ||
+      !this.ballWindow ||
+      this.error ||
+      this.config.mode !== 'pet'
+    )
+      return
+    this.runner.open(this.ballWindow.getBounds())
   }
 }
 export default new FloatingBallManager()

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:*"
+    />
+    <title>小薄荷 · 桌面快跑</title>
+  </head>
+  <body>
+    <main id="game" aria-label="小薄荷桌面快跑">
+      <canvas id="track" width="800" height="240" aria-label="点击跑道跳跃"></canvas>
+      <header>
+        <span class="brand">小薄荷 <span class="badge">桌面快跑</span></span
+        ><span class="scores"
+          ><span id="distance">0000 m</span
+          ><span class="muted">最佳 <span id="best">0000</span></span></span
+        ><button id="pause" aria-label="暂停游戏" title="暂停 · Esc">Ⅱ</button
+        ><button id="exit" aria-label="返回桌宠" title="返回桌宠">×</button>
+      </header>
+      <section id="overlay" aria-live="polite">
+        <div class="panel">
+          <p class="eyebrow">休息一下，跑一小段</p>
+          <h1 id="title">小薄荷，出发！</h1>
+          <p id="subtitle">跳过石块与仙人掌，看看今天能跑多远。</p>
+          <div class="actions">
+            <button id="primary">开始快跑</button><button id="restart" hidden>重新开始</button
+            ><button id="return" class="secondary">返回桌宠</button>
+          </div>
+          <p id="save-status" role="status"></p>
+        </div>
+      </section>
+      <footer>
+        <span><kbd>空格</kbd> / <kbd>↑</kbd> / 点击跑道跳跃</span
+        ><span>Esc 暂停 · 切换应用自动暂停</span>
+      </footer>
+    </main>
+    <script type="module" src="/src/desktopPet/runner/main.ts"></script>
+  </body>
+</html>
