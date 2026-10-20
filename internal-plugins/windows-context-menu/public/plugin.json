@@ -1,0 +1,17 @@
+{
+  "name": "windows-context-menu",
+  "title": "Windows 右键菜单管理",
+  "description": "管理传统右键菜单，禁用前备份，支持持久化还原记录",
+  "author": "CAI.Tools",
+  "version": "1.0.0",
+  "main": "index.html",
+  "logo": "logo.svg",
+  "development": { "main": "http://127.0.0.1:5178" },
+  "features": [
+    {
+      "code": "context-menu",
+      "explain": "Windows 右键菜单管理",
+      "cmds": ["右键菜单管理", "Windows 右键菜单", "Context Menu"]
+    }
+  ]
+}

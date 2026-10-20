@@ -1480,6 +1480,34 @@ window.ztools = {
     },
 
     // ==================== 其他 API ====================
+    /**
+     * 获取受支持的 Windows 传统右键菜单项。
+     * @returns 菜单列表及操作结果
+     */
+    listWindowsContextMenus: async () =>
+      await electron.ipcRenderer.invoke('internal:context-menu-list'),
+    /**
+     * 获取重启后仍保留的菜单禁用记录。
+     * @returns 禁用记录及可还原状态
+     */
+    getWindowsContextMenuBackups: async () =>
+      await electron.ipcRenderer.invoke('internal:context-menu-backups'),
+    /**
+     * 撤销指定记录对应的最近一次禁用。
+     * @param {string} backupId 禁用记录标识
+     * @returns 还原及回读校验结果
+     */
+    restoreWindowsContextMenu: async (backupId) =>
+      await electron.ipcRenderer.invoke('internal:context-menu-restore', backupId),
+    /**
+     * 备份后切换指定菜单项的启用状态。
+     * @param {string} id 菜单项标识
+     * @param {boolean} enabled 是否启用
+     * @returns 操作结果及备份位置
+     */
+    setWindowsContextMenuEnabled: async (id, enabled) =>
+      await electron.ipcRenderer.invoke('internal:context-menu-toggle', id, enabled),
+
     revealInFinder: async (path) =>
       await electron.ipcRenderer.invoke('internal:reveal-in-finder', path),
 

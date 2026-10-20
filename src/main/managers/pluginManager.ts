@@ -258,7 +258,10 @@ export class PluginManager {
       const developmentMain =
         pluginConfig.name === 'setting' && process.env.ZTOOLS_SETTING_DEV_SERVER_URL
           ? process.env.ZTOOLS_SETTING_DEV_SERVER_URL
-          : pluginConfig.development?.main
+          : pluginConfig.name === 'windows-context-menu' &&
+              process.env.ZTOOLS_CONTEXT_MENU_DEV_SERVER_URL
+            ? process.env.ZTOOLS_CONTEXT_MENU_DEV_SERVER_URL
+            : pluginConfig.development?.main
       if (developmentMain) {
         console.log('[Plugin] 开发中插件，使用 development.main:', developmentMain)
         return { pluginUrl: developmentMain, isConfigHeadless }

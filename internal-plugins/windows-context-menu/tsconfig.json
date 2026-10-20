@@ -1,0 +1,5 @@
+{
+  "extends": "../../node_modules/@electron-toolkit/tsconfig/tsconfig.web.json",
+  "include": ["src/**/*", "../../src/shared/windowsContextMenu.ts"],
+  "compilerOptions": { "composite": false, "paths": { "@shared/*": ["../../src/shared/*"] }, "types": ["vite/client"] }
+}

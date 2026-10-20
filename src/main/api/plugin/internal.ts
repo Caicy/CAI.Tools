@@ -17,6 +17,7 @@ import commandsAPI from '../renderer/commands.js'
 import pluginsAPI from '../renderer/plugins.js'
 import type { DeletePluginOptions } from '../renderer/plugins'
 import { promises as fs } from 'fs'
+import { registerWindowsContextMenuIPC } from './windowsContextMenu'
 import settingsAPI from '../renderer/settings.js'
 import systemAPI from '../renderer/system.js'
 import windowAPI from '../renderer/window.js'
@@ -89,6 +90,8 @@ export class InternalPluginAPI {
    * @returns 无返回值
    */
   private setupIPC(): void {
+    registerWindowsContextMenuIPC(this.pluginManager)
+
     // ==================== 数据库 API (ZTOOLS/ 命名空间) ====================
     ipcMain.handle('internal:db-put', (event, key: string, value: any) => {
       if (!requireInternalPlugin(this.pluginManager, event)) {
