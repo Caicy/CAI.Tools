@@ -271,7 +271,7 @@ module.exports = async function (context) {
   // 复制内置插件
   console.log('\n开始复制内置插件...')
   const internalPluginsDir = path.resolve(__dirname, '../internal-plugins')
-  const pluginNames = ['setting', 'system'] // 内置插件列表
+  const pluginNames = ['setting', 'system', 'windows-context-menu'] // 内置插件列表
 
   try {
     let resourcesPath = ''
@@ -295,6 +295,12 @@ module.exports = async function (context) {
 
       // 优先复制 dist 目录（需要编译的插件，如 setting）
       const distSrc = path.join(pluginSrcDir, 'dist')
+      if (
+        pluginName === 'windows-context-menu' &&
+        !(await pathExists(path.join(distSrc, 'index.html')))
+      ) {
+        throw new Error('缺少右键菜单插件构建产物，请先执行 pnpm build:context-menu')
+      }
       if (await pathExists(distSrc)) {
         const files = await fs.readdir(distSrc)
         for (const file of files) {
