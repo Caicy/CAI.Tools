@@ -179,6 +179,95 @@ async function reloadPetPage(app: ElectronApplication): Promise<void> {
 }
 
 /**
+ * 点击桌宠并采集正面脸部中心，检查挥手对齐、失焦连续性与结束状态。
+ * @param app 隔离的 Electron 实例。
+ * @returns 待机与挥手脸部中心、实际帧号和动画结束后的状态。
+ * @throws 宠物页面尚未创建或画布没有可识别的脸部时抛错。
+ */
+async function inspectPetWave(app: ElectronApplication): Promise<{
+  baseline: { x: number; y: number }
+  centers: { x: number; y: number }[]
+  frames: number[]
+  blurred: boolean
+  finalAction: string
+}> {
+  return app.evaluate(
+    /**
+     * 在桌宠 WebContentsView 内测量完整点击动画。
+     * @param electron 当前 Electron 主进程模块。
+     * @returns 页面采集的动画轨迹。
+     * @throws 桌宠页面未创建或面板无法识别时抛错。
+     */ async ({ webContents }) => {
+      const contents = webContents.getAllWebContents().find(
+        /**
+         * 定位桌宠页面。
+         * @param item 待检查的页面。
+         * @returns 是否为桌宠页面。
+         */
+        (item) => item.getURL().includes('desktop-pet.html')
+      )
+      if (!contents) throw new Error('未找到宠物 WebContentsView')
+      return contents.executeJavaScript(`(async () => {
+      const canvas = document.querySelector('#pet')
+      const surface = document.querySelector('#surface')
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      /**
+       * 从实际绘制像素中测量奶油色面板中心，坐标归一到素材单格。
+       * @returns 脸部包围盒中心。
+       * @throws 没有可识别的面板时抛错。
+       */
+      function faceCenter() {
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+        let minX = 192, maxX = 0, minY = 256, maxY = 0
+        // 排除天线和手脚，仅以面板颜色定位身体，眼睛跟随不影响包围盒。
+        for (let y = 80; y < 205; y++) {
+          for (let x = 45; x < 160; x++) {
+            const px = Math.min(canvas.width - 1, Math.floor(x * canvas.width / 192))
+            const py = Math.min(canvas.height - 1, Math.floor(y * canvas.height / 256))
+            const i = (py * canvas.width + px) * 4
+            if (pixels[i + 3] > 240 && pixels[i] > 220 && pixels[i + 1] > 210 &&
+                pixels[i + 2] > 155 && pixels[i + 2] < 220) {
+              minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+              minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+            }
+          }
+        }
+        if (maxX < minX) throw new Error('未识别到桌宠脸部')
+        return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+      }
+      const baseline = faceCenter()
+      const centers = [], frames = new Set()
+      let blurred = false
+      // 合成同位置按下和松开，只触发单击；不模拟原生鼠标硬件。
+      surface.setPointerCapture = () => {}
+      surface.hasPointerCapture = () => false
+      for (const type of ['pointerdown', 'pointerup']) {
+        surface.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, pointerId: 778, button: 0, screenX: 30, screenY: 30
+        }))
+      }
+      const end = performance.now() + 2000
+      while (performance.now() < end) {
+        if (canvas.dataset.action === 'waving') {
+          const frame = Number(canvas.dataset.frame)
+          if (!frames.has(frame)) { frames.add(frame); centers.push(faceCenter()) }
+          // 模拟单击打开主窗口导致的失焦，动画应继续走完整个周期。
+          if (!blurred) { blurred = true; window.dispatchEvent(new Event('blur')) }
+        }
+        await new Promise(/**
+         * 等待下一次画布采样。
+         * @param resolve 等待结束回调。
+         * @returns 定时器标识。
+         */ resolve => setTimeout(resolve, 20))
+      }
+      return { baseline, centers, frames: [...frames], blurred,
+        finalAction: canvas.dataset.action }
+    })()`)
+    }
+  )
+}
+
+/**
  * 发送合成拖动指针事件，验证拖动动作的动画时钟；不作为物理鼠标验收。
  * @param app 隔离的 Electron 实例。
  * @param vertical 是否只沿垂直方向拖动。
@@ -512,6 +601,17 @@ test('桌面宠物配置、待机视线和交互动画在隔离源码 Electron �
       await expect
         .poll(async () => getPetPageState(app))
         .toMatchObject({ gazeX: '0.4', gazeY: '0.6', action: 'idle', frame: '0' })
+
+      // 点击不应让身体跳位，主窗口切换引起的失焦也不能截断挥手。
+      const wave = await inspectPetWave(app)
+      expect(wave.blurred).toBe(true)
+      expect(wave.frames.length).toBeGreaterThanOrEqual(6)
+      expect(wave.frames).toContain(31)
+      expect(wave.finalAction).toBe('idle')
+      for (const center of wave.centers) {
+        expect(Math.abs(center.x - wave.baseline.x)).toBeLessThanOrEqual(2)
+        expect(Math.abs(center.y - wave.baseline.y)).toBeLessThanOrEqual(2)
+      }
 
       // 合成拖动进入 running-right 后帧号推进，松开后回到固定待机帧。
       const dragStart = await startSyntheticPetDrag(app)

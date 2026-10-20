@@ -120,7 +120,7 @@ async function loadAtlas(): Promise<void> {
 }
 
 /**
- * 按动作时钟绘制交互帧；待机固定首帧，仅视线变化时重绘。
+ * 按动作时钟绘制交互帧；待机固定首帧，正面动作保持当前视线。
  * @returns 无返回值。
  */
 function render(): void {
@@ -136,7 +136,8 @@ function render(): void {
     selected = getPetFrame(manifest.clips.idle, 0)
   }
   const index = manifest.clips[action].row * manifest.columns + selected.frame
-  if (index !== lastFrame || (action === 'idle' && gazeDirty)) {
+  const frontFacing = action === 'idle' || action === 'waving'
+  if (index !== lastFrame || (frontFacing && gazeDirty)) {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(
       atlas,
@@ -149,8 +150,8 @@ function render(): void {
       canvas.width,
       canvas.height
     )
-    // 动作帧使用原图；正面待机单独绘制眼睛，避免身体随鼠标抖动。
-    if (action === 'idle') drawGaze()
+    // 已对齐的正面动作复用当前视线，避免点击时眼睛回正再跳回。
+    if (frontFacing) drawGaze()
     gazeDirty = false
     lastFrame = index
     canvas.dataset.frame = String(index)
@@ -416,7 +417,17 @@ surface.addEventListener(
     if (event.dataTransfer) bridge.drop(Array.from(event.dataTransfer.files))
   }
 )
-window.addEventListener('blur', cancelGesture)
+window.addEventListener(
+  'blur',
+  /**
+   * 失焦仅取消未结束的按压或拖动，保留点击切换主窗口后的挥手。
+   * @returns 无返回值。
+   */
+  () => {
+    // 单击交付前已释放手势；主窗口获得焦点不应中断已开始的动画。
+    if (gesture) cancelGesture()
+  }
+)
 window.addEventListener('resize', resize)
 document.addEventListener(
   'visibilitychange',
