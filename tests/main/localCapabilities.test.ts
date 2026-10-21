@@ -192,11 +192,14 @@ describe('local capability compatibility boundary', () => {
     }).outputText
     const exports: Record<string, any> = {}
     const imported: string[] = []
+    const registerContextMenus = vi.fn()
     // 对外围服务使用惰性替身，只执行实际 IPC 注册与权限逻辑。
     vm.runInNewContext(compiled, {
       exports,
       require: (specifier: string) => {
         imported.push(specifier)
+        if (specifier.includes('windowsContextMenu'))
+          return { registerWindowsContextMenuIPC: registerContextMenus }
         if (specifier === 'electron') return { ipcMain: ipc }
         if (specifier.includes('localEdition')) return { unavailableOfficialCapability }
         if (specifier.includes('floatingBallManager'))
@@ -211,6 +214,7 @@ describe('local capability compatibility boundary', () => {
       })
     }
     new exports.InternalPluginAPI().init({}, manager)
+    expect(registerContextMenus).toHaveBeenCalledWith(manager)
     const channels = [
       'notification-summary',
       'notification-list',
