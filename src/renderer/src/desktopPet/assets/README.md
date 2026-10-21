@@ -29,3 +29,25 @@
 - 生成图以 Pillow 做边缘连通白背景去除、边缘去白底、切片、球壳中心对齐和确定性装配；复用原待机天线与脚保持切换锚点。睡眠以底边固定的微幅缩放形成呼吸。`zzz` 不在原画中，由画布在睡眠头部上方绘制三个错相浮动、渐隐文字；暂停时冻结位置与透明度。生成输入、装配脚本和灰底/红基线 contact sheet 仅留在不提交的 `vibe_images/`，生产代码只引用本目录图集。
 - 咖啡为 8 帧非循环动作（总时长 1600ms），睡眠为 8 帧循环呼吸（3200ms）。主进程每 750ms 读取 `powerMonitor.getSystemIdleTime()`，正常阈值 5s/15s/25s；第三杯由渲染器确认播放完后进入睡眠，系统输入唤醒并重置循环。测试比例 `ZTOOLS_DESKTOP_PET_IDLE_SCALE` 只在主进程读取；暂停、隐藏及快跑期间不持续采样，注视覆盖仅用于 idle/waving。
 - 素材沿用上文原创生成来源说明，没有第三方品牌或授权变更；不将未提交的参考插画作为运行时素材。
+
+## 2026-10-21 睡眠身形修正
+
+- 原睡眠原画把面板所在球壳与被子下方的身体分成两段，形成额外的高拱背部，与角色一体式圆球身材不符。使用内置 ImageGen 基于当前图集重绘单张睡姿：奶油面板、眼罩与薄荷绿外壳属于同一个球体，被子贴合球壳右半侧，去除独立躯干、拱起臀部与长身体。
+- 生成文件：`exec-862aaf32-e673-428a-a5a4-ff857fe1dd8a.png`。提示词要点：one single compact spherical robot, face panel on the same ball, no separate head/neck/torso/rear, lavender-blue blanket draped over the right half of the same sphere, no second dome or elongated body; cream pillow, teal sleep mask, orange antenna, tiny tucked feet; preserve identity and cel-shaded style; transparent background, no shadow, no lettering。
+- 仅替换 `atlas.png` 第 6 行的 8 帧；第 1–5 行逐像素保持一致，清单与播放逻辑不变。单帧宽度保持 160px，呼吸沿用 `[0,1,2,1,0,-1,-2,-1]` 的微幅高度变化，alpha>16 的最低像素固定在单格 y=230。源图与确定性装配脚本留在本地 `vibe_images/`。
+
+## 2026-10-21 圆形睡姿与隐藏双脚（当前版本）
+
+- 上一版仍呈现脸部与被子两个鼓包，本版重新生成单一圆形外轮廓：薄荷绿外壳与右侧紫色被子共用圆心与半径，被子不向右扩出独立身体，两只脚完全隐藏，枕头收在圆形下缘内。保留眼罩、奶油面板和橙色天线。
+- 内置 ImageGen 输出：`exec-e0a3e706-2bd0-4b7d-81f2-14cc6b24f400.png`。提示词要点：one perfect circle silhouette for the entire robot including blanket; exposed mint-green left 65% and lavender blanket right 35% share one center and radius; no feet, no protruding hands, no second lobe or flared hem; preserve original character identity and transparent background。
+- 当前装配宽度改为 132px，使主体球体直径接近待机外壳；含天线的首帧高度为 150px，八帧沿用原微幅呼吸与 y=230 基线。只替换第 6 行，前 5 行逐像素一致。源图、`assemble-sleep.cjs` 与八帧预览保留在本地 `vibe_images/`。
+
+## 2026-10-21 睡眠倾摆与睡眠符号
+
+- 渲染器沿用圆形无脚图集，按 3200ms 正弦周期轻微左右倾摆，身体以 y=230 为固定落地锚点。单格 y=108 以上的天线区域在根部与身体连续衔接，向尖端施加反向轻摆；倾摆参数位于 `../sleepMotion.ts`。
+- 原手绘 z 字母替换为两个错相浮动、渐隐的 `💤`，使用系统彩色 emoji 字体；实际 Electron 截图已确认符号可见。呼吸帧、身体、天线和符号共用有效动画时钟，暂停时整个画布冻结。
+
+## 2026-10-21 文字 zzz 与咖啡脚部修复（当前显示）
+
+- 睡眠提示改为三个普通字体绘制的 `z`，错相浮起、渐隐并逐渐放大；不使用 emoji 字体或表情字符。原有身体倾摆、天线反向摆动与暂停时钟保留。
+- 咖啡脚部原装配从 y=216 截取待机下缘，切掉鞋面上半部，形成水平遮挡。八个咖啡帧补回待机鞋面轮廓，仅装配脚部区域，中央咖啡杯与其他动作保留；落地基线仍为 y=230。

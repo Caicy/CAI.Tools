@@ -132,6 +132,19 @@ describe('desktop pet atlas pixel contract', /**
  * 验证所有动作的透明度、地面与球形侧身。
  * @returns 无返回值。
  */ () => {
+  it('keeps both coffee shoe uppers visible above the old y=216 crop', /**
+   * 检查曾被截断的左右鞋面，防止只验证落地基线而漏掉上半部缺失。
+   * @returns 无返回值。
+   */ () => {
+    const image = decodedAtlas
+    for (let col = 0; col < 8; col++) {
+      for (const x of [69, 134]) {
+        const alpha = image.pixels[((4 * 256 + 212) * image.width + col * 192 + x) * 4 + 3]
+        expect(alpha, `coffee shoe ${col}:${x}`).toBeGreaterThan(200)
+      }
+    }
+  })
+
   it('grounds every non-jump frame at y=230 and keeps required cells transparent/nonempty', /**
    * 以原始 alpha>16 测量 48 帧，防止背景或插值尾部污染。
    * @returns 无返回值。

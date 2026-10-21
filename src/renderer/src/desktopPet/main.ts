@@ -8,6 +8,7 @@ import type {
 } from '../../../shared/desktopPetTypes'
 import { validatePetManifest, PET_ACTIONS } from '../../../shared/desktopPetManifest'
 import { getPetFrame } from './player'
+import { getSleepSway } from './sleepMotion'
 import { PetClickArbiter } from './interaction'
 import manifestData from './assets/manifest.json'
 import atlasUrl from './assets/atlas.png?url'
@@ -123,7 +124,7 @@ async function loadAtlas(): Promise<void> {
 }
 
 /**
- * 按动作时钟绘制交互与空闲动作，咖啡完整播放后确认，睡眠持续绘制浮动 zzz。
+ * 按动作时钟绘制交互与空闲动作，咖啡完整播放后确认，睡眠连续倾摆并绘制睡眠符号。
  * @returns 无返回值。
  */
 function render(): void {
@@ -155,17 +156,19 @@ function render(): void {
   // 睡眠每次重绘，文字漂浮时钟独立于离散的呼吸帧。
   if (index !== lastFrame || (frontFacing && gazeDirty) || action === 'sleeping') {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(
-      atlas,
-      selected.frame * manifest.cell.width,
-      manifest.clips[action].row * manifest.cell.height,
-      manifest.cell.width,
-      manifest.cell.height,
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    )
+    if (action === 'sleeping') drawSleepingFrame(selected.frame)
+    else
+      ctx.drawImage(
+        atlas,
+        selected.frame * manifest.cell.width,
+        manifest.clips[action].row * manifest.cell.height,
+        manifest.cell.width,
+        manifest.cell.height,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      )
     // 已对齐的正面动作复用当前视线，避免点击时眼睛回正再跳回。
     if (frontFacing) drawGaze()
     // 咖啡面部与睡眠眼罩不使用旧眼睛坐标，避免重绘出多余眼睛。
@@ -186,7 +189,44 @@ function render(): void {
 }
 
 /**
- * 在低头睡眠头部上方绘制错相的漂浮文字，暂停时冻结透明度和位置。
+ * 将睡眠帧分为身体与天线上缘，连续倾摆且在根部保持接合。
+ * @param frame 当前睡眠呼吸帧。
+ * @returns 无返回值。
+ */
+function drawSleepingFrame(frame: number): void {
+  if (!atlas) return
+  const { slope, antennaRootY, antennaCounterRatio } = getSleepSway(elapsed)
+  const width = manifest.cell.width
+  const height = manifest.cell.height
+  const sourceX = frame * width
+  const sourceY = manifest.clips.sleeping.row * height
+  ctx.save()
+  ctx.scale(canvas.width / width, canvas.height / height)
+  // 身体以下缘为锚左右倾摆，幅度限制在约四像素，保持圆形观感。
+  ctx.save()
+  ctx.transform(1, 0, -slope, 1, 230 * slope, 0)
+  ctx.drawImage(
+    atlas,
+    sourceX,
+    sourceY + antennaRootY,
+    width,
+    height - antennaRootY,
+    0,
+    antennaRootY,
+    width,
+    height - antennaRootY
+  )
+  ctx.restore()
+  // 根部位移与身体一致；越接近天线尖端，反向偏移越明显。
+  const rootOffset = (230 - antennaRootY) * slope
+  const antennaSlope = slope * antennaCounterRatio
+  ctx.transform(1, 0, antennaSlope, 1, rootOffset - antennaRootY * antennaSlope, 0)
+  ctx.drawImage(atlas, sourceX, sourceY, width, antennaRootY, 0, 0, width, antennaRootY)
+  ctx.restore()
+}
+
+/**
+ * 在睡眠头部上方绘制三个错相漂浮的 z 字母，暂停时冻结透明度和位置。
  * @returns 无返回值。
  */
 function drawSleepZzz(): void {
@@ -194,16 +234,16 @@ function drawSleepZzz(): void {
   ctx.scale(canvas.width / 192, canvas.height / 256)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillStyle = '#daf5eb'
+  ctx.fillStyle = '#8db5ef'
   ctx.strokeStyle = '#164f43'
-  ctx.lineWidth = 2.5
-  // 三个错相字母保证循环任何时刻都有可见文字，且位于眼罩上方而非臀部。
+  ctx.lineWidth = 1.5
+  // 三个普通字母从天线左侧依次浮起，大小随高度增加。
   for (let i = 0; i < 3; i++) {
     const phase = (elapsed / 2400 + i / 3) % 1
     ctx.globalAlpha = Math.sin(Math.PI * phase)
-    ctx.font = `bold ${14 + phase * 6}px sans-serif`
-    const x = 60 + phase * 25
-    const y = 130 - phase * 52
+    ctx.font = `bold ${12 + phase * 8}px sans-serif`
+    const x = 44 + phase * 14
+    const y = 110 - phase * 48
     ctx.strokeText('z', x, y)
     ctx.fillText('z', x, y)
   }
