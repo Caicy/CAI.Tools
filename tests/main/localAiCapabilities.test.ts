@@ -273,9 +273,12 @@ describe('local plugin AI capability boundary', () => {
       }
     ).outputText
     const exports: Record<string, any> = {}
+    const registerContextMenus = vi.fn()
     vm.runInNewContext(compiled, {
       exports,
       require: (specifier: string) => {
+        if (specifier.includes('windowsContextMenu'))
+          return { registerWindowsContextMenuIPC: registerContextMenus }
         if (specifier === 'electron') return { ipcMain: mocks }
         if (specifier.includes('floatingBallManager'))
           return { default: { setSettingsAuthorizer: vi.fn() } }
@@ -291,6 +294,7 @@ describe('local plugin AI capability boundary', () => {
         })
       }
     )
+    expect(registerContextMenus).toHaveBeenCalledOnce()
     const call = handler('internal:ai-providers-get-official')
     await expect(call({ sender: { trusted: false } })).rejects.toThrow('仅限内置插件调用')
     expect(await call({ sender: { trusted: true } })).toMatchObject(expected)

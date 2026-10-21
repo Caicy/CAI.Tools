@@ -6,7 +6,7 @@ on:
       version:
         description: '试用版本号（须与此分支 package.json 一致）'
         required: true
-        default: '3.2.0-local.6'
+        default: '3.2.0-local.12'
       publish_release:
         description: '发布 Windows 安装包和 ZIP 到 GitHub Release'
         type: boolean
@@ -113,6 +113,9 @@ jobs:
           ZTOOLS_TARGET_PLATFORM: win32
         run: pnpm build
 
+      - name: Verify context menu plugin with source Electron
+        run: pnpm test:e2e tests/e2e/windows-context-menu.spec.ts
+
       - name: Package Windows installer and ZIP
         shell: pwsh
         run: |
@@ -136,6 +139,19 @@ jobs:
 
       - name: Verify updater metadata and packaged identity
         run: node scripts/verify-windows-update.mjs dist
+
+      - name: Verify bundled context menu plugin
+        shell: pwsh
+        run: |
+          # Check the actual packaged resources before allowing publication.
+          $plugin = Join-Path 'dist/win-unpacked/resources/app.asar.unpacked/internal-plugins' 'windows-context-menu'
+          $manifest = Get-Content -LiteralPath (Join-Path $plugin 'plugin.json') -Raw | ConvertFrom-Json
+          if ($manifest.name -ne 'windows-context-menu' -or !(Test-Path -LiteralPath (Join-Path $plugin 'index.html'))) {
+            throw 'The Windows context menu plugin is missing from the application package.'
+          }
+          if (@(Get-ChildItem -LiteralPath (Join-Path $plugin 'assets') -Filter '*.js' -File).Count -eq 0) {
+            throw 'The packaged context menu plugin has no compiled JavaScript.'
+          }
 
       - name: Verify packages and create checksums
         id: metadata

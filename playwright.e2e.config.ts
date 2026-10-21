@@ -9,13 +9,22 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [['list']],
-  webServer: {
-    command:
-      'pnpm --dir internal-plugins/setting exec vite --host 127.0.0.1 --port 15177 --strictPort',
-    url: 'http://127.0.0.1:15177',
-    reuseExistingServer: false,
-    timeout: 120_000
-  },
+  webServer: [
+    {
+      command:
+        'pnpm --dir internal-plugins/setting exec vite --host 127.0.0.1 --port 15177 --strictPort',
+      url: 'http://127.0.0.1:15177',
+      reuseExistingServer: false,
+      timeout: 120_000
+    },
+    {
+      command:
+        'pnpm exec vite --config internal-plugins/windows-context-menu/vite.config.ts --port 15178 --strictPort',
+      url: 'http://127.0.0.1:15178',
+      reuseExistingServer: false,
+      timeout: 120_000
+    }
+  ],
   use: {
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure'

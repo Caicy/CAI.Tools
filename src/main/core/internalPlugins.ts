@@ -5,13 +5,19 @@ import path from 'path'
  * 随包内置插件名称列表
  * 这些插件存在于 internal-plugins 目录，并由宿主在启动时自动装载。
  */
-export const BUNDLED_INTERNAL_PLUGIN_NAMES = ['setting', 'system', 'string-tools'] as const
+export const BUNDLED_INTERNAL_PLUGIN_NAMES = [
+  'setting',
+  'system',
+  'string-tools',
+  'windows-context-menu'
+] as const
 
 /**
  * 内部 API 特权插件名称列表
  * 这些插件允许调用 window.ztools.internal，但不一定是随包内置插件。
  */
 export const INTERNAL_API_PLUGIN_NAMES = [
+  'windows-context-menu',
   'setting',
   'system',
   'ztools-developer-plugin__dev',
