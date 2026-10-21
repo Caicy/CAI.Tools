@@ -1498,32 +1498,44 @@ window.ztools = {
 
     // ==================== 其他 API ====================
     /**
-     * 获取受支持的 Windows 传统右键菜单项。
-     * @returns 菜单列表及操作结果
+     * 获取受支持的 Windows 右键菜单项及系统环境。
+     * @returns 菜单列表、环境信息及操作结果
      */
     listWindowsContextMenus: async () =>
       await electron.ipcRenderer.invoke('internal:context-menu-list'),
     /**
-     * 获取重启后仍保留的菜单禁用记录。
-     * @returns 禁用记录及可还原状态
+     * 获取重启后仍保留的菜单修改记录。
+     * @returns 修改记录及可还原状态
      */
     getWindowsContextMenuBackups: async () =>
       await electron.ipcRenderer.invoke('internal:context-menu-backups'),
     /**
-     * 撤销指定记录对应的最近一次禁用。
-     * @param {string} backupId 禁用记录标识
-     * @returns 还原及回读校验结果
+     * 按记录依次撤销修改。
+     * @param {string[]} backupIds 修改记录标识列表
+     * @returns 整体及逐条还原结果
      */
-    restoreWindowsContextMenu: async (backupId) =>
-      await electron.ipcRenderer.invoke('internal:context-menu-restore', backupId),
+    restoreWindowsContextMenus: async (backupIds) =>
+      await electron.ipcRenderer.invoke('internal:context-menu-restore', backupIds),
     /**
-     * 备份后切换指定菜单项的启用状态。
-     * @param {string} id 菜单项标识
-     * @param {boolean} enabled 是否启用
+     * 备份后批量设置菜单项状态。
+     * @param {Array<{id: string, state: string, label?: string}>} changes 菜单项与目标状态
+     * @returns 整体及逐项结果
+     */
+    applyWindowsContextMenuStates: async (changes) =>
+      await electron.ipcRenderer.invoke('internal:context-menu-apply', changes),
+    /**
+     * 切换 Windows 11 经典右键菜单。
+     * @param {boolean} enabled 是否启用经典菜单
      * @returns 操作结果及备份位置
      */
-    setWindowsContextMenuEnabled: async (id, enabled) =>
-      await electron.ipcRenderer.invoke('internal:context-menu-toggle', id, enabled),
+    setWindowsClassicContextMenu: async (enabled) =>
+      await electron.ipcRenderer.invoke('internal:context-menu-classic', enabled),
+    /**
+     * 重启资源管理器，使菜单修改立即生效。
+     * @returns 重启结果
+     */
+    restartWindowsExplorer: async () =>
+      await electron.ipcRenderer.invoke('internal:context-menu-restart-explorer'),
 
     revealInFinder: async (path) =>
       await electron.ipcRenderer.invoke('internal:reveal-in-finder', path),

@@ -1,4 +1,4 @@
-import type { ContextMenuResult } from '@shared/windowsContextMenu'
+import type { ContextMenuChange, ContextMenuResult } from '@shared/windowsContextMenu'
 
 declare global {
   interface Window {
@@ -8,9 +8,11 @@ declare global {
       internal: {
         getPlatform: () => string
         listWindowsContextMenus: () => Promise<ContextMenuResult>
-        setWindowsContextMenuEnabled: (id: string, enabled: boolean) => Promise<ContextMenuResult>
+        applyWindowsContextMenuStates: (changes: ContextMenuChange[]) => Promise<ContextMenuResult>
         getWindowsContextMenuBackups: () => Promise<ContextMenuResult>
-        restoreWindowsContextMenu: (backupId: string) => Promise<ContextMenuResult>
+        restoreWindowsContextMenus: (backupIds: string[]) => Promise<ContextMenuResult>
+        setWindowsClassicContextMenu: (enabled: boolean) => Promise<ContextMenuResult>
+        restartWindowsExplorer: () => Promise<ContextMenuResult>
       }
     }
   }

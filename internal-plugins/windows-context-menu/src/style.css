@@ -6,6 +6,7 @@
   --text-secondary: #616161;
   --border-color: #d9dce2;
   --danger-color: #d14343;
+  --accent-color: #2f6fde;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -15,6 +16,7 @@
     --text-secondary: #c2c3c7;
     --border-color: #4b4e56;
     --danger-color: #ff9696;
+    --accent-color: #5b8ff0;
   }
 }
 html,
@@ -65,6 +67,7 @@ select {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 .feedback.error {
   color: var(--danger-color);

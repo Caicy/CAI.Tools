@@ -43,16 +43,24 @@ export function registerWindowsContextMenuIPC(
     authorize(event)
     return manager.list()
   })
-  ipcMain.handle('internal:context-menu-toggle', async (event, id: unknown, enabled: unknown) => {
+  ipcMain.handle('internal:context-menu-apply', async (event, changes: unknown) => {
     authorize(event)
-    return manager.setEnabled(id, enabled)
+    return manager.apply(changes)
   })
   ipcMain.handle('internal:context-menu-backups', async (event) => {
     authorize(event)
     return manager.listBackups()
   })
-  ipcMain.handle('internal:context-menu-restore', async (event, backupId: unknown) => {
+  ipcMain.handle('internal:context-menu-restore', async (event, backupIds: unknown) => {
     authorize(event)
-    return manager.restore(backupId)
+    return manager.restore(backupIds)
+  })
+  ipcMain.handle('internal:context-menu-classic', async (event, enabled: unknown) => {
+    authorize(event)
+    return manager.setClassicMenu(enabled)
+  })
+  ipcMain.handle('internal:context-menu-restart-explorer', async (event) => {
+    authorize(event)
+    return manager.restartExplorer()
   })
 }

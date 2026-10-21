@@ -6,7 +6,9 @@ import path from 'node:path'
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => Promise<unknown>>(),
   list: vi.fn().mockResolvedValue({ success: true, entries: [] }),
-  setEnabled: vi.fn().mockResolvedValue({ success: true }),
+  apply: vi.fn().mockResolvedValue({ success: true }),
+  setClassicMenu: vi.fn().mockResolvedValue({ success: true }),
+  restartExplorer: vi.fn().mockResolvedValue({ success: true }),
   listBackups: vi.fn().mockResolvedValue({ success: true, backups: [] }),
   restore: vi.fn().mockResolvedValue({ success: true })
 }))
@@ -20,7 +22,9 @@ vi.mock('electron', () => ({
 vi.mock('../../src/main/utils/windowsContextMenu', () => ({
   WindowsContextMenuManager: class {
     list = mocks.list
-    setEnabled = mocks.setEnabled
+    apply = mocks.apply
+    setClassicMenu = mocks.setClassicMenu
+    restartExplorer = mocks.restartExplorer
     listBackups = mocks.listBackups
     restore = mocks.restore
   }
@@ -55,8 +59,11 @@ describe('右键菜单 IPC 权限', () => {
       await expect(handler(event, 'invalid', true)).rejects.toThrow('仅限内置右键菜单插件')
     }
     expect(mocks.list).not.toHaveBeenCalled()
-    expect(mocks.setEnabled).not.toHaveBeenCalled()
+    expect(mocks.apply).not.toHaveBeenCalled()
     expect(mocks.restore).not.toHaveBeenCalled()
+    expect(mocks.setClassicMenu).not.toHaveBeenCalled()
+    expect(mocks.restartExplorer).not.toHaveBeenCalled()
+    expect(mocks.handlers.size).toBe(6)
   })
 
   it('插件管理器未就绪时拒绝调用', async () => {
@@ -82,12 +89,17 @@ describe('右键菜单 IPC 权限', () => {
     const list = mocks.handlers.get('internal:context-menu-list')!
     expect(await list(event)).toEqual({ success: true, entries: [] })
     const id = 'HKCU\\Software\\Classes\\*\\shell\\Demo'
-    await mocks.handlers.get('internal:context-menu-toggle')!(event, id, false)
-    expect(mocks.setEnabled).toHaveBeenCalledWith(id, false)
+    const changes = [{ id, state: 'disabled' }]
+    await mocks.handlers.get('internal:context-menu-apply')!(event, changes)
+    expect(mocks.apply).toHaveBeenCalledWith(changes)
+    await mocks.handlers.get('internal:context-menu-classic')!(event, true)
+    expect(mocks.setClassicMenu).toHaveBeenCalledWith(true)
+    await mocks.handlers.get('internal:context-menu-restart-explorer')!(event)
+    expect(mocks.restartExplorer).toHaveBeenCalledTimes(1)
     await mocks.handlers.get('internal:context-menu-backups')!(event)
-    await mocks.handlers.get('internal:context-menu-restore')!(event, 'backup-id')
+    await mocks.handlers.get('internal:context-menu-restore')!(event, ['backup-id'])
     expect(mocks.listBackups).toHaveBeenCalledTimes(1)
-    expect(mocks.restore).toHaveBeenCalledWith('backup-id')
+    expect(mocks.restore).toHaveBeenCalledWith(['backup-id'])
     await expect(list({ ...event, senderFrame: {} })).rejects.toThrow('仅限内置右键菜单插件')
     await expect(list({ ...event, senderFrame: null })).rejects.toThrow('仅限内置右键菜单插件')
     expect(mocks.list).toHaveBeenCalledTimes(1)
