@@ -60,6 +60,23 @@ test('右键菜单搜索入口打开工具，并按平台展示内容', async ({
         })
       )
       .toContain(stableContent)
+    if (process.platform === 'win32') {
+      // Windows 会真正枚举注册表；必须等首次读取完成，不能只等提前出现的筛选栏。
+      await expect
+        .poll(() =>
+          inspectPlugin(
+            application!,
+            `(() => {
+        const refresh = document.querySelector('.header-actions button:last-child');
+        return !!refresh && !refresh.disabled;
+      })()`
+          )
+        )
+        .toBe(true)
+      expect(
+        await inspectPlugin(application, 'document.querySelectorAll("[role=alert]").length')
+      ).toBe(0)
+    }
     // 等待工具正文后，仅截取插件视图的当前可见区域。
     const screenshot = await application.evaluate(async ({ webContents }) => {
       const plugin = webContents
