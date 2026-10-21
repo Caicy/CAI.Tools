@@ -1,4 +1,10 @@
-export type PetAction = 'idle' | 'running-right' | 'running-left' | 'waving'
+export type PetAction = 'idle' | 'running-right' | 'running-left' | 'waving' | 'coffee' | 'sleeping'
+
+export interface PetIdleState {
+  action: 'idle' | 'coffee' | 'sleeping'
+  drink: number
+  cycle: number
+}
 export type PetSize = 'small' | 'medium' | 'large'
 
 export interface DesktopPetConfig {
@@ -31,6 +37,7 @@ export interface PetSnapshot {
   config: DesktopPetConfig
   letter: string
   error: string | null
+  idle: PetIdleState
 }
 
 export type PetIntent =
@@ -39,6 +46,7 @@ export type PetIntent =
   | { type: 'click' | 'doubleClick' | 'dragEnd' | 'contextMenu' }
   | { type: 'dragStart'; x: number; y: number }
   | { type: 'frame'; index: number }
+  | { type: 'coffeeFinished'; cycle: number; drink: number }
   | { type: 'failure'; message: string }
 
 export interface DesktopPetBridge {
@@ -47,6 +55,7 @@ export interface DesktopPetBridge {
   masks(masks: Uint8Array[], width: number, height: number): void
   drop(files: File[]): void
   onSnapshot(callback: (snapshot: PetSnapshot) => void): () => void
+  onIdle(callback: (state: PetIdleState) => void): () => void
   onGaze(callback: (point: { x: number; y: number }) => void): () => void
 }
 

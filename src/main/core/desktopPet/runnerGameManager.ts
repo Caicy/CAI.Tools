@@ -1,5 +1,6 @@
 import {
   BrowserWindow,
+  app,
   ipcMain,
   powerMonitor,
   screen,
@@ -13,9 +14,10 @@ import { HOST_STORAGE_KEYS } from '../../../shared/storageKeys'
 import {
   MAX_RUNNER_DISTANCE,
   readRunnerRecord,
-  type RunnerSaveResult
+  type RunnerSaveResult,
+  type RunnerDragIntent
 } from '../../../shared/desktopPetRunnerTypes'
-import { runnerBounds } from './runnerGeometry'
+import { clampRunnerBounds, restoreRunnerBounds } from './runnerGeometry'
 
 interface RunnerHost {
   hide(): void
@@ -28,6 +30,7 @@ export class RunnerGameManager {
   private window: BrowserWindow | null = null
   private ready = false
   private timeout: ReturnType<typeof setTimeout> | undefined
+  private dragging: { x: number; y: number; bounds: Electron.Rectangle } | null = null
 
   /**
    * 注入桌宠生命周期，不让游戏模块依赖桌宠单例。
@@ -58,7 +61,24 @@ export class RunnerGameManager {
       return
     }
     try {
-      const bounds = runnerBounds(screen.getDisplayMatching(petBounds).workArea)
+      // 位置读取失败只回落布局，不应阻断游戏启动。
+      let saved: unknown = null
+      try {
+        saved = databaseAPI.dbGet(HOST_STORAGE_KEYS.desktopPetRunnerPosition)
+      } catch {
+        /* 使用默认位置。 */
+      }
+      const areas: Electron.Rectangle[] = []
+      for (const display of screen.getAllDisplays()) areas.push(display.workArea)
+      const bounds = restoreRunnerBounds(
+        saved,
+        areas,
+        screen.getDisplayMatching(petBounds).workArea
+      )
+      const testClock =
+        !app.isPackaged &&
+        process.env.ZTOOLS_E2E === '1' &&
+        process.env.ZTOOLS_E2E_RUNNER_CLOCK === '1'
       const win = new BrowserWindow({
         ...bounds,
         show: false,
@@ -75,13 +95,14 @@ export class RunnerGameManager {
           preload: getPreloadPath('desktop-pet-runner.js'),
           contextIsolation: true,
           nodeIntegration: false,
-          sandbox: true
+          sandbox: true,
+          additionalArguments: testClock ? ['--runner-e2e-clock'] : []
         }
       })
       this.window = win
       this.registerIPC()
       win.on('closed', this.onClosed)
-      win.on('blur', this.pause)
+      win.on('blur', this.onBlur)
       win.webContents.on(
         'render-process-gone',
         /**
@@ -210,6 +231,76 @@ export class RunnerGameManager {
     )
     ipcMain.on('desktop-pet-runner:exit', this.onExit)
     ipcMain.on('desktop-pet-runner:failed', this.onPageFailure)
+    ipcMain.on('desktop-pet-runner:drag', this.onDrag)
+  }
+
+  /**
+   * 处理白名单拖动意图；只更新当前窗口并在释放时夹取及保存。
+   * @param event 主 frame IPC 事件。
+   * @param value 未知拖动意图。
+   * @returns 无返回值。
+   */
+  private onDrag = (event: IpcMainEvent, value: unknown): void => {
+    if (!this.authorized(event) || !this.ready || !value || typeof value !== 'object') return
+    const intent = value as RunnerDragIntent
+    if (intent.type === 'end') {
+      if (!this.dragging) return
+      this.dragging = null
+      this.fitAndSavePosition()
+      return
+    }
+    // IPC 从来不接受任意窗口句柄、尺寸或异常坐标。
+    if (
+      !['start', 'move'].includes(intent.type) ||
+      !('x' in intent) ||
+      !('y' in intent) ||
+      !Number.isFinite(intent.x) ||
+      !Number.isFinite(intent.y) ||
+      Math.abs(intent.x) > 1_000_000 ||
+      Math.abs(intent.y) > 1_000_000
+    )
+      return
+    if (intent.type === 'start') {
+      this.dragging = { x: intent.x, y: intent.y, bounds: this.window!.getBounds() }
+    } else if (this.dragging) {
+      const start = this.dragging
+      this.window!.setBounds(
+        {
+          ...start.bounds,
+          x: Math.round(start.bounds.x + intent.x - start.x),
+          y: Math.round(start.bounds.y + intent.y - start.y)
+        },
+        false
+      )
+    }
+  }
+
+  /**
+   * 保留当前显示器内位置并持久化；磁盘失败不影响继续或退出。
+   * @returns 无返回值。
+   */
+  private fitAndSavePosition(): void {
+    if (!this.window) return
+    try {
+      const current = this.window.getBounds()
+      const bounds = clampRunnerBounds(current, screen.getDisplayMatching(current).workArea)
+      this.window.setBounds(bounds, false)
+      databaseAPI.dbPut(HOST_STORAGE_KEYS.desktopPetRunnerPosition, {
+        version: 1,
+        x: bounds.x,
+        y: bounds.y
+      })
+    } catch {
+      /* 位置或磁盘失败不关闭仍可操作的游戏。 */
+    }
+  }
+
+  /**
+   * 拖动自身不触发失焦暂停；真实外部失焦仍暂停。
+   * @returns 无返回值。
+   */
+  private onBlur = (): void => {
+    if (!this.dragging) this.pause()
   }
 
   /**
@@ -247,9 +338,11 @@ export class RunnerGameManager {
     if (!this.window) return
     this.pause()
     try {
-      this.window.setBounds(
-        runnerBounds(screen.getDisplayMatching(this.window.getBounds()).workArea)
-      )
+      // 结束可能的跨屏手势，避免后续 move 把窗口重新推回已移除屏幕。
+      this.dragging = null
+      const current = this.window.getBounds()
+      this.window.setBounds(clampRunnerBounds(current, screen.getDisplayMatching(current).workArea))
+      this.fitAndSavePosition()
     } catch {
       this.onFailure()
     }
@@ -281,6 +374,8 @@ export class RunnerGameManager {
     clearTimeout(this.timeout)
     this.window = null
     this.ready = false
+    this.dragging = null
+    ipcMain.removeListener('desktop-pet-runner:drag', this.onDrag)
     ipcMain.removeHandler('desktop-pet-runner:ready')
     ipcMain.removeHandler('desktop-pet-runner:save')
     ipcMain.removeListener('desktop-pet-runner:exit', this.onExit)

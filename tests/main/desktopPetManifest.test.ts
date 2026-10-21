@@ -7,7 +7,7 @@ import {
 } from '../../src/shared/desktopPetTypes'
 
 /**
- * 创建满足 P0 网格约束的测试清单。
+ * 创建满足六动作网格约束的测试清单。
  * @param overrides 要覆盖的清单字段。
  * @returns 可供验证器使用的测试清单。
  */
@@ -24,21 +24,33 @@ function createManifest(overrides: Partial<PetManifest> = {}): PetManifest {
     image: 'atlas.png',
     cell: { width: 192, height: 256 },
     columns: 8,
-    rows: 4,
+    rows: 6,
     clips: {
       idle: { ...clip, row: 0 },
       'running-right': { ...clip, row: 1 },
       'running-left': { ...clip, row: 2 },
-      waving: { ...clip, row: 3, loop: false }
+      waving: { ...clip, row: 3, loop: false },
+      coffee: { ...clip, row: 4, loop: false },
+      sleeping: { ...clip, row: 5 }
     },
     ...overrides
   }
 }
 
 describe('desktop pet manifest', () => {
-  it('accepts the P0 8x4 atlas contract', () => {
-    expect(validatePetManifest(createManifest(), 1536, 1024)).toEqual(createManifest())
-    expect(PET_ACTIONS).toEqual(['idle', 'running-right', 'running-left', 'waving'])
+  it('accepts the six-action 8x6 atlas contract', /**
+   * 验证扩展动作和网格仍在解码面积预算内。
+   * @returns 无返回值。
+   */ () => {
+    expect(validatePetManifest(createManifest(), 1536, 1536)).toEqual(createManifest())
+    expect(PET_ACTIONS).toEqual([
+      'idle',
+      'running-right',
+      'running-left',
+      'waving',
+      'coffee',
+      'sleeping'
+    ])
   })
 
   it.each([
@@ -47,7 +59,7 @@ describe('desktop pet manifest', () => {
     ['path traversal', { image: '../atlas.png' }],
     ['wrong extension', { image: 'atlas.jpg' }]
   ])('rejects an unsafe image reference: %s', (_name, override) => {
-    expect(() => validatePetManifest(createManifest(override), 1536, 1024)).toThrow()
+    expect(() => validatePetManifest(createManifest(override), 1536, 1536)).toThrow()
   })
 
   it('rejects a decoded image whose dimensions do not match the declared grid', () => {
@@ -72,7 +84,7 @@ describe('desktop pet manifest', () => {
     [
       'row outside grid',
       (manifest: PetManifest) => {
-        manifest.clips.idle.row = 4
+        manifest.clips.idle.row = 6
       }
     ],
     [
@@ -102,7 +114,7 @@ describe('desktop pet manifest', () => {
   ])('rejects invalid clip data: %s', (_name, mutate) => {
     const manifest = createManifest()
     mutate(manifest)
-    expect(() => validatePetManifest(manifest, 1536, 1024)).toThrow()
+    expect(() => validatePetManifest(manifest, 1536, 1536)).toThrow()
   })
 })
 

@@ -45,6 +45,8 @@ async function getPetPageState(app: ElectronApplication): Promise<{
   frame: string
   gazeX: string
   gazeY: string
+  drink: string
+  zzz: boolean
 } | null> {
   return app.evaluate(async ({ webContents }) => {
     const contents = webContents
@@ -57,7 +59,9 @@ async function getPetPageState(app: ElectronApplication): Promise<{
       action: document.querySelector('#pet')?.dataset.action || '',
       frame: document.querySelector('#pet')?.dataset.frame || '',
       gazeX: document.querySelector('#pet')?.dataset.gazeX || '',
-      gazeY: document.querySelector('#pet')?.dataset.gazeY || ''
+      gazeY: document.querySelector('#pet')?.dataset.gazeY || '',
+      drink: document.querySelector('#pet')?.dataset.drink || '0',
+      zzz: document.querySelector('#pet')?.dataset.zzz === 'true'
     })`)
   })
 }
@@ -342,9 +346,10 @@ async function endSyntheticPetDrag(app: ElectronApplication): Promise<void> {
 /**
  * 启动带浮窗模块、固定系统光标输入的源码 Electron 测试实例。
  * @param dataRoot 本次测试的隔离数据目录。
+ * @param idleScale 主进程空闲阈值比例，默认不缩短。
  * @returns 已启动的 Electron 应用。
  */
-async function launchApp(dataRoot: string): Promise<ElectronApplication> {
+async function launchApp(dataRoot: string, idleScale = 1): Promise<ElectronApplication> {
   const legacyRoot = path.join(dataRoot, 'legacy')
   await fs.mkdir(legacyRoot, { recursive: true })
   const app = await electron.launch({
@@ -357,6 +362,7 @@ async function launchApp(dataRoot: string): Promise<ElectronApplication> {
       ZTOOLS_DATA_ROOT: dataRoot,
       ZTOOLS_E2E: '1',
       ZTOOLS_E2E_DESKTOP_PET: '1',
+      ZTOOLS_DESKTOP_PET_IDLE_SCALE: String(idleScale),
       ZTOOLS_LEGACY_USER_DATA_PATH: legacyRoot,
       ZTOOLS_SETTING_DEV_SERVER_URL: settingUrl
     }
@@ -368,12 +374,18 @@ async function launchApp(dataRoot: string): Promise<ElectronApplication> {
      * @param electron 当前 Electron 主进程模块。
      * @returns 无返回值。
      */
-    ({ screen }) => {
+    ({ screen, powerMonitor }) => {
       /**
        * 返回合成拖动测试的稳定光标位置。
        * @returns DIP 屏幕坐标。
        */
       screen.getCursorScreenPoint = () => ({ x: 400, y: 300 })
+      // 交互专项默认系统一直有输入；空闲专项再注入可控来源，不依赖测试者的桌面输入。
+      /**
+       * 返回持续有系统输入的测试来源。
+       * @returns 空闲秒数零。
+       */
+      powerMonitor.getSystemIdleTime = () => 0
     }
   )
   return app
@@ -790,3 +802,217 @@ async function fileExists(filePath: string): Promise<boolean> {
     return false
   }
 }
+
+/**
+ * 只在隔离主进程替换系统空闲来源，并计数验证暂停/隐藏不会采样。
+ * @param app 隔离的 Electron 应用。
+ * @param ticking 是否模拟持续没有任何系统输入。
+ * @returns 来源替换完成的 Promise。
+ */
+async function setIdleSource(app: ElectronApplication, ticking: boolean): Promise<void> {
+  await app.evaluate(
+    /**
+     * 注入可控系统来源，不向宠物页面暴露测试能力。
+     * @param electron 当前 Electron 主进程模块。
+     * @param advance 是否让系统空闲量随真实时钟增长。
+     * @returns 无返回值。
+     */ ({ powerMonitor }, advance) => {
+      const source = powerMonitor as typeof powerMonitor & { __petIdleReads: number }
+      source.__petIdleReads = 0
+      const start = Date.now()
+      /**
+       * 模拟系统鼠标和键盘共同空闲时间，零值模拟任一输入。
+       * @returns 系统空闲秒数。
+       */
+      source.getSystemIdleTime = () => {
+        source.__petIdleReads++
+        return advance ? (Date.now() - start) / 1000 : 0
+      }
+    },
+    ticking
+  )
+}
+
+/**
+ * 读取系统空闲 API 采样次数。
+ * @param app 隔离的 Electron 应用。
+ * @returns 主进程采样次数。
+ */
+async function idleReads(app: ElectronApplication): Promise<number> {
+  return app.evaluate(
+    /**
+     * 查询测试注入来源的计数。
+     * @param electron 当前 Electron 主进程模块。
+     * @returns API 调用次数。
+     */ ({ powerMonitor }) =>
+      (powerMonitor as typeof powerMonitor & { __petIdleReads: number }).__petIdleReads
+  )
+}
+
+/**
+ * 确认睡眠头部上方有实际绘制的 zzz 像素，而不只检查数据属性。
+ * @param app 隔离的 Electron 应用。
+ * @returns 头部上方区域的非透明像素数量。
+ * @throws 宠物页面尚未创建时抛错。
+ */
+async function zzzPixels(app: ElectronApplication): Promise<number> {
+  return app.evaluate(
+    /**
+     * 从真实宠物画布读取文字区域。
+     * @param electron 当前 Electron 主进程模块。
+     * @returns 非透明像素数量。
+     * @throws 没有宠物页面时抛错。
+     */ async ({ webContents }) => {
+      const contents = webContents.getAllWebContents().find(
+        /**
+         * 定位宠物页面。
+         * @param item 页面实例。
+         * @returns 是否为宠物页面。
+         */ (item) => item.getURL().includes('desktop-pet.html')
+      )
+      if (!contents) throw new Error('没有宠物页面')
+      return contents.executeJavaScript(`(/**
+     * 统计头部上方（素材坐标 y=75..130）实际文字像素。
+     * @returns 可见像素数。
+     */ () => {
+      const canvas = document.querySelector('#pet')
+      const scale = canvas.width / 192
+      const data = canvas.getContext('2d').getImageData(Math.round(40 * scale), Math.round(75 * scale), Math.round(70 * scale), Math.round(55 * scale)).data
+      let visible = 0
+      for (let i = 3; i < data.length; i += 4) if (data[i] > 16) visible++
+      return visible
+    })()`)
+    }
+  )
+}
+
+test('系统空闲三杯咖啡后睡眠，zzz 可见，输入唤醒且暂停和隐藏不采样', /**
+ * 通过缩短的主进程阈值验收完整循环、实际截图和生命周期边界。
+ * @param fixtures 当前 Playwright fixture。
+ * @param testInfo 截图输出上下文。
+ * @returns 验收结束的 Promise。
+ */ async ({}, testInfo) => {
+  const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cai-pet-idle-'))
+  let app: ElectronApplication | null = null
+  try {
+    app = await launchApp(dataRoot, 0.2)
+    await openGeneralSettings(app)
+    await inSettings(
+      app,
+      `(async () => {
+      const current = await window.ztools.internal.getDesktopPetConfig()
+      await window.ztools.internal.setDesktopPetConfig({ ...current.config, size: 'large', paused: false })
+      await window.ztools.internal.setFloatingBallEnabled(true)
+    })()`
+    )
+    await expect
+      .poll(
+        /**
+         * 等待素材和画布真正就绪。
+         * @returns 宠物页面状态。
+         */ () => getPetPageState(app!)
+      )
+      .toMatchObject({ ready: true, action: 'idle' })
+    await capturePetView(app, testInfo, 'idle')
+    await setIdleSource(app, true)
+    await expect
+      .poll(
+        /**
+         * 等待第一杯的中间啜饮帧。
+         * @returns 是否为中间啜饮帧。
+         */ async () => {
+          const state = await getPetPageState(app!)
+          return (
+            state?.action === 'coffee' &&
+            state.drink === '1' &&
+            [35, 36, 37].includes(Number(state.frame))
+          )
+        },
+        { intervals: [30], timeout: 15_000 }
+      )
+      .toBe(true)
+    await capturePetView(app, testInfo, 'coffee-mid-sip')
+    // 暂停同时冻结画布与主进程采样，不靠页面定时器自行推进系统空闲。
+    await inSettings(
+      app,
+      `(async () => { const s = await window.ztools.internal.getDesktopPetConfig(); return window.ztools.internal.setDesktopPetConfig({ ...s.config, paused: true }) })()`
+    )
+    const paused = await getPetPageState(app)
+    const reads = await idleReads(app)
+    await waitForAnimation(1200)
+    expect(await getPetPageState(app)).toMatchObject({ action: 'coffee', frame: paused!.frame })
+    expect(await idleReads(app)).toBe(reads)
+    await inSettings(
+      app,
+      `(async () => { const s = await window.ztools.internal.getDesktopPetConfig(); return window.ztools.internal.setDesktopPetConfig({ ...s.config, paused: false }) })()`
+    )
+    for (const drink of ['2', '3']) {
+      await expect
+        .poll(
+          /**
+           * 等待同一循环的下一杯，不能跳过完整动作。
+           * @returns 宠物页面状态。
+           */ () => getPetPageState(app!),
+          { intervals: [50], timeout: 15_000 }
+        )
+        .toMatchObject({ action: 'coffee', drink })
+    }
+    await expect
+      .poll(
+        /**
+         * 第三杯真正结束后等待睡眠和文字。
+         * @returns 宠物页面状态。
+         */ () => getPetPageState(app!),
+        { intervals: [50], timeout: 15_000 }
+      )
+      .toMatchObject({ action: 'sleeping', drink: '3', zzz: true })
+    expect(await zzzPixels(app)).toBeGreaterThan(20)
+    await capturePetView(app, testInfo, 'sleep-with-zzz')
+    await waitForAnimation(1000)
+    expect(await getPetPageState(app)).toMatchObject({ action: 'sleeping', drink: '3' })
+    // 零系统空闲模拟系统任意鼠标/键盘输入（不是只向宠物页发送一个唤醒动作）。
+    await setIdleSource(app, false)
+    await expect
+      .poll(
+        /**
+         * 等待系统采样将睡眠唤醒并重置饮用次数。
+         * @returns 宠物页面状态。
+         */ () => getPetPageState(app!)
+      )
+      .toMatchObject({ action: 'idle', drink: '0', zzz: false })
+    const drag = await startSyntheticPetDrag(app)
+    expect(drag.action).toBe('running-right')
+    await capturePetView(app, testInfo, 'running-right')
+    await endSyntheticPetDrag(app)
+    await setIdleSource(app, true)
+    await expect
+      .poll(
+        /**
+         * 输入唤醒后的循环从第一杯重新开始。
+         * @returns 宠物页面状态。
+         */ () => getPetPageState(app!),
+        { intervals: [50] }
+      )
+      .toMatchObject({ action: 'coffee', drink: '1' })
+    await app.evaluate(
+      /**
+       * 隐藏桌宠，模拟快跑占用桌面入口期间的生命周期。
+       * @param electron 当前 Electron 主进程模块。
+       * @returns 无返回值。
+       */ ({ BrowserWindow }) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (win.webContents.getURL().includes('desktop-pet.html')) win.hide()
+        }
+      }
+    )
+    const hiddenReads = await idleReads(app)
+    await waitForAnimation(1500)
+    expect(await idleReads(app)).toBe(hiddenReads)
+    expect(
+      (await inSettings(app, 'window.ztools.internal.getDesktopPetConfig()')).idle
+    ).toMatchObject({ action: 'idle', drink: 0 })
+  } finally {
+    if (app) await closeApp(app)
+    await fs.rm(dataRoot, { recursive: true, force: true })
+  }
+})

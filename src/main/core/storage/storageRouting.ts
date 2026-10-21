@@ -23,6 +23,7 @@ const DEVICE_EXACT_KEYS = new Set([
   'ZTOOLS/device-settings',
   'ZTOOLS/settings-general',
   toHostDocId(HOST_STORAGE_KEYS.desktopPetRunner),
+  toHostDocId(HOST_STORAGE_KEYS.desktopPetRunnerPosition),
   'ZTOOLS/plugins',
   'ZTOOLS/disabled-plugins',
   toHostDocId(HOST_STORAGE_KEYS.pluginOrder),

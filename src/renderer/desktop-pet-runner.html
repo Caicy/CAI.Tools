@@ -13,13 +13,15 @@
     <main id="game" aria-label="小薄荷桌面快跑">
       <canvas id="track" width="800" height="240" aria-label="点击跑道跳跃"></canvas>
       <header>
-        <span class="brand">小薄荷 <span class="badge">桌面快跑</span></span
+        <span class="brand">小薄荷 <span class="badge" id="level">LV 1 · 热身</span></span
+        ><span id="sprint" role="status"></span
         ><span class="scores"
           ><span id="distance">0000 m</span
           ><span class="muted">最佳 <span id="best">0000</span></span></span
         ><button id="pause" aria-label="暂停游戏" title="暂停 · Esc">Ⅱ</button
         ><button id="exit" aria-label="返回桌宠" title="返回桌宠">×</button>
       </header>
+      <p id="level-banner" role="status" hidden></p>
       <section id="overlay" aria-live="polite">
         <div class="panel">
           <p class="eyebrow">休息一下，跑一小段</p>
@@ -33,7 +35,7 @@
         </div>
       </section>
       <footer>
-        <span><kbd>空格</kbd> / <kbd>↑</kbd> / 点击跑道跳跃</span
+        <span><kbd>空格</kbd> / <kbd>↑</kbd> / 跑道 · 按住跳更高 · <kbd>↓</kbd> 下蹲</span
         ><span>Esc 暂停 · 切换应用自动暂停</span>
       </footer>
     </main>

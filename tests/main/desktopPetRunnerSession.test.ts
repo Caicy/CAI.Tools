@@ -33,7 +33,16 @@ vi.mock(
       })
       show = vi.fn()
       focus = vi.fn()
-      setBounds = vi.fn()
+      setBounds = vi.fn(
+        /**
+         * 维护原生边界，使拖动及屏幕变化测试可以读回位置。
+         * @param bounds 新边界。
+         * @returns 无返回值。
+         */
+        (bounds: any) => {
+          Object.assign(this.options, bounds)
+        }
+      )
       loadFile = mocks.load
       loadURL = mocks.load
       /**
@@ -61,6 +70,7 @@ vi.mock(
       }
     }
     return {
+      app: { isPackaged: false },
       BrowserWindow: FakeWindow,
       ipcMain: Object.assign(new Emitter(), {
         /**
@@ -86,7 +96,12 @@ vi.mock(
          * 返回测试中的工作区。
          * @returns 模拟显示器。
          */
-        getDisplayMatching: () => ({ workArea: mocks.area })
+        getDisplayMatching: () => ({ workArea: mocks.area }),
+        /**
+         * 提供已连接工作区供位置恢复。
+         * @returns 显示器列表。
+         */
+        getAllDisplays: () => [{ workArea: mocks.area }]
       }),
       powerMonitor: new Emitter()
     }
@@ -345,4 +360,39 @@ test('数据库抛错时保留会话和明确保存失败结果' /**
   expect(manager.isActive()).toBe(true)
   ipcMain.emit('desktop-pet-runner:exit', event())
   expect(manager.isActive()).toBe(false)
+})
+
+test('可信拖动移动并夹取保存，屏幕变化保留位置，重开恢复；非法 frame 不得拖动' /**
+ * 验证设备位置完整生命周期和最小 IPC 权限。
+ * @returns 无返回值。
+ */, () => {
+  manager.open(bounds)
+  mocks.handlers.get('desktop-pet-runner:ready')!(event())
+  const win = mocks.windows[0]
+  const original = { x: win.options.x, y: win.options.y }
+  ipcMain.emit(
+    'desktop-pet-runner:drag',
+    { ...event(), senderFrame: {} },
+    { type: 'start', x: 100, y: 100 }
+  )
+  ipcMain.emit('desktop-pet-runner:drag', event(), { type: 'move', x: 0, y: 0 })
+  expect(win.setBounds).not.toHaveBeenCalled()
+  ipcMain.emit('desktop-pet-runner:drag', event(), { type: 'start', x: 100, y: 100 })
+  win.emit('blur')
+  expect(win.webContents.send).not.toHaveBeenCalled()
+  ipcMain.emit('desktop-pet-runner:drag', event(), { type: 'move', x: NaN, y: 0 })
+  expect(win.setBounds).not.toHaveBeenCalled()
+  ipcMain.emit('desktop-pet-runner:drag', event(), { type: 'move', x: 170, y: 0 })
+  ipcMain.emit('desktop-pet-runner:drag', event(), { type: 'end' })
+  const position = { version: 1, x: original.x + 70, y: original.y - 100 }
+  expect(mocks.write).toHaveBeenLastCalledWith('desktop-pet-runner-position', position)
+  screen.emit('display-metrics-changed')
+  expect(win.options.x).toBe(position.x)
+  expect(win.options.y).toBe(position.y)
+  manager.close()
+  expect((ipcMain as unknown as EventEmitter).listenerCount('desktop-pet-runner:drag')).toBe(0)
+  mocks.read.mockReturnValue(position)
+  manager.open(bounds)
+  expect(mocks.windows[1].options.x).toBe(position.x)
+  expect(mocks.windows[1].options.y).toBe(position.y)
 })

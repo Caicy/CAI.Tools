@@ -4,7 +4,7 @@
   "image": "atlas.png",
   "cell": { "width": 192, "height": 256 },
   "columns": 8,
-  "rows": 4,
+  "rows": 6,
   "clips": {
     "idle": {
       "row": 0,
@@ -29,6 +29,18 @@
       "frames": 8,
       "durationsMs": [160, 140, 140, 180, 180, 140, 140, 240],
       "loop": false
+    },
+    "coffee": {
+      "row": 4,
+      "frames": 8,
+      "durationsMs": [180, 140, 180, 240, 240, 240, 180, 200],
+      "loop": false
+    },
+    "sleeping": {
+      "row": 5,
+      "frames": 8,
+      "durationsMs": [400, 400, 400, 400, 400, 400, 400, 400],
+      "loop": true
     }
   }
 }

@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopPetRunnerBridge } from '../shared/desktopPetRunnerTypes'
 
 const bridge: DesktopPetRunnerBridge = {
+  testEnabled: process.argv.includes('--runner-e2e-clock'),
+  /**
+   * 发送受限拖动意图，不能访问任意窗口或 IPC 通道。
+   * @param intent 拖动阶段和屏幕 DIP 坐标。
+   * @returns 无返回值。
+   */
+  drag: (intent) => ipcRenderer.send('desktop-pet-runner:drag', intent),
   /**
    * 通知素材加载完成并读取纪录。
    * @returns 本地纪录 Promise。

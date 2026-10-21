@@ -1,6 +1,7 @@
 export const HOST_STORAGE_KEYS = {
   settingsGeneral: 'settings-general',
   desktopPetRunner: 'desktop-pet-runner',
+  desktopPetRunnerPosition: 'desktop-pet-runner-position',
   plugins: 'plugins',
   disabledPlugins: 'disabled-plugins',
   pluginOrder: 'plugin-order',

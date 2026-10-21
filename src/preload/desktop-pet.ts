@@ -1,7 +1,32 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { DesktopPetBridge, PetSnapshot } from '../shared/desktopPetTypes'
+import type { DesktopPetBridge, PetIdleState, PetSnapshot } from '../shared/desktopPetTypes'
 
 const bridge: DesktopPetBridge = {
+  /**
+   * 订阅主进程的系统空闲状态，不向页面暴露系统输入或环境变量。
+   * @param callback 空闲动作接收器。
+   * @returns 解除订阅函数。
+   */
+  onIdle: (callback) => {
+    /**
+     * 转交当前循环状态。
+     * @param _event IPC 事件。
+     * @param state 受控动作与循环代号。
+     * @returns 无返回值。
+     */
+    const listener = (_event: Electron.IpcRendererEvent, state: PetIdleState): void =>
+      callback(state)
+    ipcRenderer.on('desktop-pet:idle', listener)
+    /**
+     * 释放本次空闲状态监听。
+     * @returns 无返回值。
+     */
+    const unsubscribe = (): void => {
+      // 窗口重载必须释放旧监听，避免一次状态启动多个动作。
+      ipcRenderer.removeListener('desktop-pet:idle', listener)
+    }
+    return unsubscribe
+  },
   /**
    * 订阅相对宠物的光标方向，不暴露桌面绝对坐标。
    * @param callback 方向接收器。

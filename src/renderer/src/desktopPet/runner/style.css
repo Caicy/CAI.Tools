@@ -155,6 +155,32 @@ h1 {
   font-size: 10px;
   color: #ecd4a0;
 }
+header {
+  cursor: grab;
+  touch-action: none;
+}
+#game {
+  touch-action: none;
+}
+#sprint {
+  color: #f3d79b;
+  font-size: 12px;
+}
+#level-banner {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 7px 20px;
+  border: 1px solid #79ab90;
+  border-radius: 20px;
+  background: #18332edb;
+  color: #d7f4db;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
 [hidden] {
   display: none !important;
 }

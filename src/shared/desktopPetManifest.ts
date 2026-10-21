@@ -1,6 +1,13 @@
 import type { PetAction, PetManifest } from './desktopPetTypes'
 
-export const PET_ACTIONS: PetAction[] = ['idle', 'running-right', 'running-left', 'waving']
+export const PET_ACTIONS: PetAction[] = [
+  'idle',
+  'running-right',
+  'running-left',
+  'waving',
+  'coffee',
+  'sleeping'
+]
 
 /**
  * 验证静态精灵图清单与实际解码尺寸，拒绝越界及远程素材。

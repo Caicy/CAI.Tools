@@ -3,6 +3,7 @@ import type {
   DesktopPetBridge,
   PetAction,
   PetManifest,
+  PetIdleState,
   PetSnapshot
 } from '../../../shared/desktopPetTypes'
 import { validatePetManifest, PET_ACTIONS } from '../../../shared/desktopPetManifest'
@@ -32,6 +33,8 @@ let revision = 0
 let gaze = { x: 0, y: 0 }
 let gazeDirty = true
 let action: PetAction = 'idle'
+let idleState: PetIdleState = { action: 'idle', drink: 0, cycle: 0 }
+let playingCoffee: PetIdleState | null = null
 let elapsed = 0
 let lastTime = performance.now()
 let lastFrame = -1
@@ -120,7 +123,7 @@ async function loadAtlas(): Promise<void> {
 }
 
 /**
- * 按动作时钟绘制交互帧；待机固定首帧，正面动作保持当前视线。
+ * 按动作时钟绘制交互与空闲动作，咖啡完整播放后确认，睡眠持续绘制浮动 zzz。
  * @returns 无返回值。
  */
 function render(): void {
@@ -131,13 +134,26 @@ function render(): void {
   lastTime = now
   let selected = getPetFrame(manifest.clips[action], action === 'idle' ? 0 : elapsed)
   if (selected.done) {
-    action = 'idle'
+    // 确认使用实际播放的代号；输入唤醒后的旧确认不能触发睡眠。
+    if (action === 'coffee' && playingCoffee) {
+      bridge.send({
+        type: 'coffeeFinished',
+        cycle: playingCoffee.cycle,
+        drink: playingCoffee.drink
+      })
+      playingCoffee = null
+      action = 'idle'
+    } else {
+      action = gesture ? 'idle' : idleState.action
+      if (action === 'coffee') playingCoffee = { ...idleState }
+    }
     elapsed = 0
-    selected = getPetFrame(manifest.clips.idle, 0)
+    selected = getPetFrame(manifest.clips[action], 0)
   }
   const index = manifest.clips[action].row * manifest.columns + selected.frame
   const frontFacing = action === 'idle' || action === 'waving'
-  if (index !== lastFrame || (frontFacing && gazeDirty)) {
+  // 睡眠每次重绘，文字漂浮时钟独立于离散的呼吸帧。
+  if (index !== lastFrame || (frontFacing && gazeDirty) || action === 'sleeping') {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(
       atlas,
@@ -152,15 +168,65 @@ function render(): void {
     )
     // 已对齐的正面动作复用当前视线，避免点击时眼睛回正再跳回。
     if (frontFacing) drawGaze()
+    // 咖啡面部与睡眠眼罩不使用旧眼睛坐标，避免重绘出多余眼睛。
+    if (action === 'sleeping') drawSleepZzz()
+    else canvas.dataset.zzz = 'false'
     gazeDirty = false
     lastFrame = index
     canvas.dataset.frame = String(index)
     canvas.dataset.action = action
     canvas.dataset.ready = 'true'
-    bridge.send({ type: 'frame', index })
+    if (index !== Number(canvas.dataset.sentFrame)) {
+      bridge.send({ type: 'frame', index })
+      canvas.dataset.sentFrame = String(index)
+    }
   }
   if (!snapshot.config.paused && action !== 'idle')
-    timer = setTimeout(render, Math.max(16, selected.remainingMs))
+    timer = setTimeout(render, action === 'sleeping' ? 50 : Math.max(16, selected.remainingMs))
+}
+
+/**
+ * 在低头睡眠头部上方绘制错相的漂浮文字，暂停时冻结透明度和位置。
+ * @returns 无返回值。
+ */
+function drawSleepZzz(): void {
+  ctx.save()
+  ctx.scale(canvas.width / 192, canvas.height / 256)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#daf5eb'
+  ctx.strokeStyle = '#164f43'
+  ctx.lineWidth = 2.5
+  // 三个错相字母保证循环任何时刻都有可见文字，且位于眼罩上方而非臀部。
+  for (let i = 0; i < 3; i++) {
+    const phase = (elapsed / 2400 + i / 3) % 1
+    ctx.globalAlpha = Math.sin(Math.PI * phase)
+    ctx.font = `bold ${14 + phase * 6}px sans-serif`
+    const x = 60 + phase * 25
+    const y = 130 - phase * 52
+    ctx.strokeText('z', x, y)
+    ctx.fillText('z', x, y)
+  }
+  ctx.restore()
+  canvas.dataset.zzz = 'true'
+}
+
+/**
+ * 接收系统空闲动作，手势与挥手优先；醒来重置咖啡确认但不截断挥手。
+ * @param state 主进程的空闲循环状态。
+ * @returns 无返回值。
+ */
+function applyIdleState(state: PetIdleState): void {
+  const changedCoffee = state.cycle !== idleState.cycle || state.drink !== idleState.drink
+  idleState = state
+  canvas.dataset.drink = String(state.drink)
+  if (snapshot?.config.paused || gesture || action === 'waving') return
+  // 动作只在收到新的饮用请求时重启，配置快照不能重复播放同一杯。
+  if (state.action === 'coffee' && (action !== 'coffee' || changedCoffee)) {
+    playingCoffee = { ...state }
+    if (action === 'coffee') action = 'idle'
+  } else if (state.action !== 'coffee') playingCoffee = null
+  setAction(state.action)
 }
 
 /**
@@ -251,6 +317,8 @@ async function applySnapshot(next: PetSnapshot): Promise<void> {
     elapsed += Math.max(0, performance.now() - lastTime)
   }
   snapshot = next
+  // 初始快照覆盖订阅前丢失的空闲消息；暂停只保存状态，不切换当前画面。
+  applyIdleState(next.idle)
   lastTime = performance.now()
   clearTimeout(timer)
   letter.textContent = next.letter || 'Z'
@@ -288,6 +356,11 @@ surface.addEventListener(
    */
   (event) => {
     if (event.button !== 0) return
+    // 按压即时唤醒，不等待下一次系统采样；拖动/挥手继续拥有动作优先级。
+    if (!snapshot?.config.paused && (action === 'coffee' || action === 'sleeping')) {
+      playingCoffee = null
+      setAction('idle')
+    }
     bridge.send({ type: 'press', active: true })
     gesture = {
       pointer: event.pointerId,
@@ -452,6 +525,7 @@ const unsubscribe = bridge.onSnapshot(
     void applySnapshot(value)
   }
 )
+const unsubscribeIdle = bridge.onIdle(applyIdleState)
 const unsubscribeGaze = bridge.onGaze(
   /**
    * 接收系统光标方向，待机按需重绘，暂停时保持当前眼睛位置。
@@ -477,6 +551,7 @@ window.addEventListener(
     cancelGesture()
     clearTimeout(timer)
     unsubscribe()
+    unsubscribeIdle()
     unsubscribeGaze()
     atlas?.close()
   }

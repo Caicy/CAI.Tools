@@ -3,6 +3,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  powerMonitor,
   screen,
   type IpcMainEvent,
   type IpcMainInvokeEvent
@@ -15,6 +16,7 @@ import windowManager from '../managers/windowManager'
 import { getPreloadPath, getRendererPath } from '../utils/appBundlePath'
 import { clampPetBounds } from './desktopPet/windowGeometry'
 import { RunnerGameManager } from './desktopPet/runnerGameManager'
+import { PetIdleCycle } from './desktopPet/idleCycle'
 import {
   normalizeDesktopPetConfig,
   type DesktopPetConfig,
@@ -42,6 +44,15 @@ class FloatingBallManager {
   private lastGaze = ''
   private ignoring = false
   private poll: ReturnType<typeof setTimeout> | undefined
+  private idlePoll: ReturnType<typeof setTimeout> | undefined
+  private idleCycle = new PetIdleCycle(
+    /**
+     * 只在主进程读取系统鼠标与键盘的共同空闲时间。
+     * @returns 系统空闲秒数；测试可以替换 powerMonitor 的来源。
+     */
+    () => powerMonitor.getSystemIdleTime(),
+    Number(process.env.ZTOOLS_DESKTOP_PET_IDLE_SCALE || 1)
+  )
   private deliveries = new Set<ReturnType<typeof setTimeout>>()
   private authorizeSettings: ((event: PetEvent) => boolean) | null = null
   private quitting = false
@@ -295,7 +306,12 @@ class FloatingBallManager {
     switch (intent.type) {
       case 'press':
         this.pressed = intent.active === true
-        if (this.pressed) this.setIgnoring(false)
+        if (this.pressed) {
+          // 合成手势也视作明确的交互，取消尚未确认的饮用动作。
+          this.idleCycle.reset()
+          this.publishIdle()
+          this.setIgnoring(false)
+        }
         break
       case 'fileHover':
         this.fileHover = intent.active === true
@@ -327,6 +343,16 @@ class FloatingBallManager {
         if (Number.isInteger(intent.index) && intent.index >= 0 && intent.index < this.masks.length)
           this.frame = intent.index
         break
+      case 'coffeeFinished':
+        // 暂停、隐藏或交互期间不接收旧动画完成确认。
+        if (
+          this.canPollIdle() &&
+          !this.pressed &&
+          !this.dragging &&
+          this.idleCycle.finish(intent.cycle, intent.drink)
+        )
+          this.publishIdle()
+        break
       case 'failure':
         this.error =
           typeof intent.message === 'string' ? intent.message.slice(0, 240) : '宠物加载失败'
@@ -342,7 +368,12 @@ class FloatingBallManager {
    * @returns 可序列化快照。
    */
   public getSnapshot(): PetSnapshot {
-    return { config: { ...this.config }, letter: this.letter, error: this.error }
+    return {
+      config: { ...this.config },
+      letter: this.letter,
+      error: this.error,
+      idle: this.idleCycle.snapshot()
+    }
   }
 
   /**
@@ -386,6 +417,8 @@ class FloatingBallManager {
       this.resizeWindow()
     }
     this.publish()
+    // 暂停取消系统采样，恢复时保留被冻结的循环进度。
+    this.updateIdlePolling()
     return this.getSnapshot()
   }
 
@@ -395,6 +428,46 @@ class FloatingBallManager {
    */
   private publish(): void {
     this.ballWindow?.webContents.send('desktop-pet:snapshot', this.getSnapshot())
+  }
+
+  /**
+   * 判断当前是否允许采样系统空闲，游戏窗口不得驱动桌宠循环。
+   * @returns 是否为可见、未暂停的有效宠物。
+   */
+  private canPollIdle(): boolean {
+    return (
+      !!this.ballWindow?.isVisible() &&
+      this.enabled &&
+      !this.quitting &&
+      this.config.mode === 'pet' &&
+      !this.config.paused &&
+      !this.error &&
+      !this.runner.isActive()
+    )
+  }
+
+  /**
+   * 发布空闲动作，不重复发送完整配置以免重建画布。
+   * @returns 无返回值。
+   */
+  private publishIdle(): void {
+    this.ballWindow?.webContents.send('desktop-pet:idle', this.idleCycle.snapshot())
+  }
+
+  /**
+   * 在有效宠物窗口中每 750ms 采样一次，冻结期间不调用 powerMonitor。
+   * @returns 无返回值。
+   */
+  private updateIdlePolling = (): void => {
+    clearTimeout(this.idlePoll)
+    if (!this.canPollIdle()) {
+      this.idleCycle.suspend()
+      return
+    }
+    // 拖动、按压和原生菜单优先于自动动作；结束后重新积累空闲时间。
+    if (this.pressed || this.dragging || this.menuOpen || this.fileHover) this.idleCycle.suspend()
+    else if (this.idleCycle.sample()) this.publishIdle()
+    this.idlePoll = setTimeout(this.updateIdlePolling, 750)
   }
 
   /**
@@ -492,16 +565,25 @@ class FloatingBallManager {
        */
       () => {
         clearTimeout(this.poll)
+        clearTimeout(this.idlePoll)
+        // 隐藏（包括游戏）不推进循环；恢复时从正常待机重新开始。
+        this.idleCycle.reset()
+        this.idleCycle.suspend()
+        this.publishIdle()
         this.dragging = null
       }
     )
     win.on(
       'show',
       /**
-       * 处理 show 事件，维护对应的窗口或页面状态。
-       * @returns 当前表达式的计算结果。
+       * 恢复光标采样和系统空闲循环。
+       * @returns 无返回值。
        */
-      () => this.sampleCursor()
+      () => {
+        // 两种采样采用独立时钟，避免以光标高频采样调用系统空闲 API。
+        this.sampleCursor()
+        this.updateIdlePolling()
+      }
     )
     win.on(
       'close',
@@ -865,7 +947,10 @@ class FloatingBallManager {
    * @returns 无返回值。
    */
   private destroyBallWindow(): void {
+    // 先停止两种采样，销毁后的窗口不能接收旧循环消息。
     clearTimeout(this.poll)
+    clearTimeout(this.idlePoll)
+    this.idleCycle.reset()
     for (const timer of this.deliveries) clearTimeout(timer)
     this.deliveries.clear()
     this.dragging = null
