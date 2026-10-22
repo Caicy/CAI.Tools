@@ -330,6 +330,26 @@ async function main() {
     application.process().once('exit', () => {
       baselineExited = true
     })
+    // Playwright 的 Node inspector 会让进程在正常退出时等待调试器，阻止 NSIS 替换。
+    // 仅在应用自己进入退出流程后释放测试连接，不代替更新器发起退出或安装。
+    await application.evaluate(
+      /**
+       * 在真实退出事件中释放验收工具持有的调试连接。
+       * @param {object} electron Electron 主进程模块。
+       * @returns {Promise<void>} 退出监听注册完成后结束。
+       */
+      async ({ app }) => {
+        const inspector = await import('node:inspector')
+        app.once(
+          'will-quit',
+          /**
+           * 允许已主动退出的进程结束，交还安装器文件访问权。
+           * @returns {void} 无返回值。
+           */
+          () => inspector.close()
+        )
+      }
+    )
     // 首次真实下载立即取消，确认应用仍停留在基线版本且能够重新开始下载。
     await updateWindow.getByRole('button', { name: '下载并安装' }).click()
     await updateWindow.getByRole('button', { name: '取消下载' }).click()
