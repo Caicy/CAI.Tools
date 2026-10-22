@@ -242,27 +242,36 @@ async function inspectPetWave(app: ElectronApplication): Promise<{
       const baseline = faceCenter()
       const centers = [], frames = new Set()
       let blurred = false
-      // 合成同位置按下和松开，只触发单击；不模拟原生鼠标硬件。
-      surface.setPointerCapture = () => {}
-      surface.hasPointerCapture = () => false
-      for (const type of ['pointerdown', 'pointerup']) {
-        surface.dispatchEvent(new PointerEvent(type, {
-          bubbles: true, pointerId: 778, button: 0, screenX: 30, screenY: 30
-        }))
+      /**
+       * 在画布帧属性更新后的微任务中采集，避免 20ms 轮询漏掉短暂呈现的末帧。
+       * @returns 无返回值。
+       */
+      function sampleWave() {
+        if (canvas.dataset.action !== 'waving') return
+        const frame = Number(canvas.dataset.frame)
+        if (!frames.has(frame)) { frames.add(frame); centers.push(faceCenter()) }
+        // 模拟单击打开主窗口导致的失焦，动画应继续走完整个周期。
+        if (!blurred) { blurred = true; window.dispatchEvent(new Event('blur')) }
       }
-      const end = performance.now() + 2000
-      while (performance.now() < end) {
-        if (canvas.dataset.action === 'waving') {
-          const frame = Number(canvas.dataset.frame)
-          if (!frames.has(frame)) { frames.add(frame); centers.push(faceCenter()) }
-          // 模拟单击打开主窗口导致的失焦，动画应继续走完整个周期。
-          if (!blurred) { blurred = true; window.dispatchEvent(new Event('blur')) }
+      const observer = new MutationObserver(sampleWave)
+      observer.observe(canvas, { attributes: true, attributeFilter: ['data-frame', 'data-action'] })
+      try {
+        // 合成同位置按下和松开，只触发单击；不模拟原生鼠标硬件。
+        surface.setPointerCapture = () => {}
+        surface.hasPointerCapture = () => false
+        for (const type of ['pointerdown', 'pointerup']) {
+          surface.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, pointerId: 778, button: 0, screenX: 30, screenY: 30
+          }))
         }
         await new Promise(/**
-         * 等待下一次画布采样。
-         * @param resolve 等待结束回调。
+         * 保留完整动画观察窗口，仍检查结束后的待机状态。
+         * @param resolve 观察结束回调。
          * @returns 定时器标识。
-         */ resolve => setTimeout(resolve, 20))
+         */ resolve => setTimeout(resolve, 2000))
+      } finally {
+        // 无论动画脚本成功与否，释放页面观察器。
+        observer.disconnect()
       }
       return { baseline, centers, frames: [...frames], blurred,
         finalAction: canvas.dataset.action }
@@ -348,6 +357,7 @@ async function endSyntheticPetDrag(app: ElectronApplication): Promise<void> {
  * @param dataRoot 本次测试的隔离数据目录。
  * @param idleScale 主进程空闲阈值比例，默认不缩短。
  * @returns 已启动的 Electron 应用。
+ * @throws Electron 启动或系统采样注入失败时抛错。
  */
 async function launchApp(dataRoot: string, idleScale = 1): Promise<ElectronApplication> {
   const legacyRoot = path.join(dataRoot, 'legacy')
@@ -367,27 +377,39 @@ async function launchApp(dataRoot: string, idleScale = 1): Promise<ElectronAppli
       ZTOOLS_SETTING_DEV_SERVER_URL: settingUrl
     }
   })
-  // 合成手势测试固定系统采样输入，避免测试期间用户移动鼠标造成竞争。
-  await app.evaluate(
-    /**
-     * 固定隔离实例的系统光标输入。
-     * @param electron 当前 Electron 主进程模块。
-     * @returns 无返回值。
-     */
-    ({ screen, powerMonitor }) => {
+  try {
+    // 等待首个原生窗口出现后再注入采样，避免连接建立阶段的执行上下文竞争。
+    await app.firstWindow()
+    // 合成手势测试固定系统采样输入，避免测试期间用户移动鼠标造成竞争。
+    await app.evaluate(
       /**
-       * 返回合成拖动测试的稳定光标位置。
-       * @returns DIP 屏幕坐标。
+       * 固定隔离实例的系统光标输入。
+       * @param electron 当前 Electron 主进程模块。
+       * @returns 无返回值。
        */
-      screen.getCursorScreenPoint = () => ({ x: 400, y: 300 })
-      // 交互专项默认系统一直有输入；空闲专项再注入可控来源，不依赖测试者的桌面输入。
-      /**
-       * 返回持续有系统输入的测试来源。
-       * @returns 空闲秒数零。
-       */
-      powerMonitor.getSystemIdleTime = () => 0
+      ({ screen, powerMonitor }) => {
+        /**
+         * 返回合成拖动测试的稳定光标位置。
+         * @returns DIP 屏幕坐标。
+         */
+        screen.getCursorScreenPoint = () => ({ x: 400, y: 300 })
+        // 交互专项默认系统一直有输入；空闲专项再注入可控来源，不依赖测试者的桌面输入。
+        /**
+         * 返回持续有系统输入的测试来源。
+         * @returns 空闲秒数零。
+         */
+        powerMonitor.getSystemIdleTime = () => 0
+      }
+    )
+  } catch (error) {
+    // 初始化失败也关闭已创建的隔离进程，避免锁住临时数据目录。
+    try {
+      await app.close()
+    } catch {
+      // 保留原始初始化异常，关闭失败由测试进程退出完成最终回收。
     }
-  )
+    throw error
+  }
   return app
 }
 

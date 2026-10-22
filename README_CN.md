@@ -6,7 +6,7 @@
 
 **本地免登录的应用启动器与插件平台**
 
-_基于 [ZTools](https://github.com/ZToolsCenter/ZTools) 的本地版分支 | 当前版本 3.2.0-local.3_
+_基于 [ZTools](https://github.com/ZToolsCenter/ZTools) 的本地版分支 | 当前版本 3.2.0-local.16_
 
 [![GitHub release](https://img.shields.io/github/v/release/Caicy/CAI.Tools)](https://github.com/Caicy/CAI.Tools/releases)
 [![License](https://img.shields.io/github/license/Caicy/CAI.Tools)](./LICENSE)
@@ -73,15 +73,15 @@ _基于 [ZTools](https://github.com/ZToolsCenter/ZTools) 的本地版分支 | �
 
 CAI.Tools 是免登录的本地版本。启动链不加载官方账号、支付与云同步模块，相关兼容入口会明确返回 `OFFICIAL_CAPABILITY_UNAVAILABLE`，而不是静默失败。
 
-| 能力           | 本地版状态                                                                    |
-| -------------- | ----------------------------------------------------------------------------- |
-| 官方账号与登录 | 不提供；`getUser` 返回 `null`                                                 |
-| 支付与支付记录 | 不提供；调用返回明确失败                                                      |
-| 官方云同步     | 不提供；活动心跳与同步模块已从启动链移除                                      |
-| 插件市场       | 匿名访问，请求不携带 `Authorization`；依赖账号的操作在联网前失败              |
-| AI 能力        | 仅使用自配供应商；官方 AI 查询返回明确失败                                    |
-| 版本更新       | 手动检查上游 GitHub Release，自动检查恒关闭，不下载或安装更新包               |
-| 插件兼容版本   | 插件 API 返回上游基线 `3.2.0`，应用与设置页显示完整本地版本号 `3.2.0-local.3` |
+| 能力           | 本地版状态                                                                     |
+| -------------- | ------------------------------------------------------------------------------ |
+| 官方账号与登录 | 不提供；`getUser` 返回 `null`                                                  |
+| 支付与支付记录 | 不提供；调用返回明确失败                                                       |
+| 官方云同步     | 不提供；活动心跳与同步模块已从启动链移除                                       |
+| 插件市场       | 匿名访问，请求不携带 `Authorization`；依赖账号的操作在联网前失败               |
+| AI 能力        | 仅使用自配供应商；官方 AI 查询返回明确失败                                     |
+| 版本更新       | 手动检查上游 GitHub Release，自动检查恒关闭，不下载或安装更新包                |
+| 插件兼容版本   | 插件 API 返回上游基线 `3.2.0`，应用与设置页显示完整本地版本号 `3.2.0-local.16` |
 
 ### 数据目录
 

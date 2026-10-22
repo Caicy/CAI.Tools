@@ -233,15 +233,21 @@ const showEditor = ref(false)
 const editingShortcut = ref<GlobalShortcut | null>(null)
 const prefillTarget = ref('')
 
+/**
+ * 计算快捷键或别名目标的唯一标识。
+ * @param command 包含类型与关键字段的指令目标。
+ * @returns 规范化的指令唯一 ID。
+ */
 function getCommandId(command: {
   name: string
   path?: string
   type: 'plugin' | 'direct'
   subType?: 'app' | 'system-setting' | 'local-shortcut'
   featureCode?: string
-  cmdType?: 'text' | 'window'
+  cmdType?: ShortcutsSettingCommandCmdType
   pluginName?: string
 }): string {
+  // 组装参数并调用底层唯一 ID 生成器。
   return _getCommandId({
     type: command.type,
     subType: command.subType,

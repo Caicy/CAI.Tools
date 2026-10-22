@@ -1304,7 +1304,7 @@ async function handleAddCustomInternalApiPluginName(): Promise<void> {
 
   const confirmed = await confirm({
     title: '授权内部 API 风险提示',
-    message: `即将允许插件 "${pluginName}" 调用内部 API。\n\n内部 API 可以读写 ZTools 设置、管理插件、注册快捷键、访问窗口信息并执行其他高权限操作。请仅授权你完全信任的插件；恶意插件可能造成隐私泄露、数据损坏或执行非预期操作。`,
+    message: `即将允许插件 "${pluginName}" 调用内部 API。\n\n内部 API 可以读写 CAI.Tools 设置、管理插件、注册快捷键、访问窗口信息并执行其他高权限操作。请仅授权你完全信任的插件；恶意插件可能造成隐私泄露、数据损坏或执行非预期操作。`,
     type: 'danger',
     confirmText: '已知风险，继续授权',
     cancelText: '取消'

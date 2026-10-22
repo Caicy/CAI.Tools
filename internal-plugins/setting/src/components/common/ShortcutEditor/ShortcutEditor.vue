@@ -17,7 +17,7 @@
           <div>
             <!-- 快捷键类型说明 -->
             <div v-if="isAppShortcut" class="form-notice">
-              应用快捷键仅在 ZTools 窗口激活时生效，不会与其他应用冲突
+              应用快捷键仅在 CAI.Tools 窗口激活时生效，不会与其他应用冲突
             </div>
 
             <!-- 快捷键录制 -->
@@ -166,8 +166,11 @@ function handleSave(): void {
 
 /**
  * 接收选择器选中的目标指令，并同步更新待保存字符串。
+ * @param target 选中的快捷键目标项。
+ * @returns 无返回值。
  */
 function handleSelectTarget(target: ShortcutsSettingShortcutTargetOption): void {
+  // 保存选中的 canonical 快捷键目标指令值。
   targetCommand.value = target.value
 }
 

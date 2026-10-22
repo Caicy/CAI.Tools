@@ -10,6 +10,7 @@ import {
 } from '@/views/ShortcutsSetting/ShortcutsSetting'
 import { getCommandId as _getCommandId } from '@shared/commandShared'
 
+export type CommandType = 'direct' | 'plugin' | 'builtin'
 export type CommandCmdType = 'text' | 'regex' | 'over' | 'img' | 'files' | 'window'
 
 type MatchCmd = {
@@ -27,7 +28,7 @@ export interface CommandActionCommand {
   name: string
   path?: string
   icon?: string
-  type: string
+  type: CommandType
   subType?: string
   featureCode?: string
   pluginName?: string
@@ -75,12 +76,21 @@ export function usePluginCommandActions(options: UsePluginCommandActionsOptions)
 
   // ============ commandId ============
 
+  /**
+   * 生成插件指令的唯一标识。
+   * @param pluginName 插件唯一名称。
+   * @param featureCode 功能代码。
+   * @param cmdName 指令名称。
+   * @param cmdType 指令匹配类型。
+   * @returns 统一的指令唯一 ID。
+   */
   function getPluginCommandId(
     pluginName: string,
     featureCode: string,
     cmdName: string,
-    cmdType: 'text' | 'window'
+    cmdType: CommandCmdType
   ): string {
+    // 委托统一的 commandId 生成工具构造插件指令 ID。
     return _getCommandId({
       type: 'plugin',
       pluginName,
@@ -92,31 +102,51 @@ export function usePluginCommandActions(options: UsePluginCommandActionsOptions)
 
   // ============ 禁用指令 ============
 
+  /**
+   * 判断插件指令是否已被用户禁用。
+   * @param pluginName 插件唯一名称。
+   * @param featureCode 功能代码。
+   * @param cmdName 指令名称。
+   * @param cmdType 指令匹配类型。
+   * @returns 当前指令是否处于禁用列表中。
+   */
   function isCommandDisabled(
     pluginName: string,
     featureCode: string,
     cmdName: string,
-    cmdType: 'text' | 'window'
+    cmdType: CommandCmdType
   ): boolean {
+    // 根据唯一 ID 在禁用数组中查询是否存在。
     const id = getPluginCommandId(pluginName, featureCode, cmdName, cmdType)
     return disabledCommands.value.includes(id)
   }
 
+  /**
+   * 切换插件指令的禁用状态。
+   * @param pluginName 插件唯一名称。
+   * @param featureCode 功能代码。
+   * @param cmdName 指令名称。
+   * @param cmdType 指令匹配类型。
+   * @returns 操作完成后结束的 Promise。
+   */
   async function toggleCommandDisabled(
     pluginName: string,
     featureCode: string,
     cmdName: string,
-    cmdType: 'text' | 'window'
+    cmdType: CommandCmdType
   ): Promise<void> {
+    // 计算指令唯一 ID 并判断当前禁用状态。
     const id = getPluginCommandId(pluginName, featureCode, cmdName, cmdType)
     const index = disabledCommands.value.indexOf(id)
 
+    // 执行状态切换：未禁用则加入，已禁用则移除。
     if (index === -1) {
       disabledCommands.value.push(id)
     } else {
       disabledCommands.value.splice(index, 1)
     }
 
+    // 持久化更新后的禁用列表并通知主窗口。
     await saveDisabledCommands()
   }
 
@@ -266,8 +296,15 @@ export function usePluginCommandActions(options: UsePluginCommandActionsOptions)
 
   // ============ 打开指令 ============
 
+  /**
+   * 打开指定功能下的指令。
+   * @param featureCode 功能代码。
+   * @param cmdName 指令名称。
+   * @returns 操作完成后结束的 Promise。
+   */
   async function openCommand(featureCode: string, cmdName: string): Promise<void> {
     try {
+      // 在当前已加载的插件指令中定位目标指令。
       const command = findPluginCommand(featureCode, cmdName)
 
       if (!command) {
@@ -275,6 +312,7 @@ export function usePluginCommandActions(options: UsePluginCommandActionsOptions)
         return
       }
 
+      // 调用主程序内部接口启动该插件指令。
       await window.ztools.internal.launch({
         path: command.path || '',
         type: command.type,
@@ -431,13 +469,23 @@ export function usePluginCommandActions(options: UsePluginCommandActionsOptions)
       )
   })
 
+  /**
+   * 响应指令右键或操作菜单项的选择。
+   * @param key 选中的菜单项键名。
+   * @param pluginName 插件唯一名称。
+   * @param featureCode 功能代码。
+   * @param cmdName 指令名称。
+   * @param cmdType 指令匹配类型。
+   * @returns 操作完成后结束的 Promise。
+   */
   async function handleMenuSelect(
     key: string,
     pluginName: string,
     featureCode: string,
     cmdName: string,
-    cmdType: 'text' | 'window'
+    cmdType: CommandCmdType
   ): Promise<void> {
+    // 按菜单项 key 分发不同的业务处理逻辑。
     if (key === 'toggle') {
       await toggleCommandDisabled(pluginName, featureCode, cmdName, cmdType)
     } else if (key === 'open') {
@@ -457,11 +505,19 @@ export function usePluginCommandActions(options: UsePluginCommandActionsOptions)
     }
   }
 
+  /**
+   * 响应匹配指令菜单项的选择。
+   * @param key 选中的菜单项键名。
+   * @param feature 功能项对象。
+   * @param cmd 匹配指令对象。
+   * @returns 操作完成后结束的 Promise。
+   */
   async function handleMatchMenuSelect(
     key: string,
     feature: { code?: string },
     cmd: { name?: string; label?: string; text?: string; type?: string }
   ): Promise<void> {
+    // 详情菜单项单独打开指令详情弹窗。
     if (key === 'detail') {
       openMatchCommandDetail(feature as any, cmd as any)
       return
@@ -473,6 +529,7 @@ export function usePluginCommandActions(options: UsePluginCommandActionsOptions)
     // - 插件详情页：来自 plugin.json 原始对象，仅有 label
     // 这里统一使用 cmdKey，与 commandId 计算规则保持一致。
     const cmdName = cmdKey(cmd)
+    // 委托通用菜单选择器执行对应操作。
     await handleMenuSelect(
       key,
       pluginName,

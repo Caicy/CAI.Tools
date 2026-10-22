@@ -6,7 +6,7 @@
 
 **A Local, Login-Free Application Launcher and Plugin Platform**
 
-_Local-edition fork of [ZTools](https://github.com/ZToolsCenter/ZTools) | Current version 3.2.0-local.3_
+_Local-edition fork of [ZTools](https://github.com/ZToolsCenter/ZTools) | Current version 3.2.0-local.16_
 
 [![GitHub release](https://img.shields.io/github/v/release/Caicy/CAI.Tools)](https://github.com/Caicy/CAI.Tools/releases)
 [![License](https://img.shields.io/github/license/Caicy/CAI.Tools)](./LICENSE)
@@ -327,7 +327,7 @@ When submitting an issue, please include:
 - Steps to reproduce
 - Error logs (if any)
 
-For generic upstream ZTools problems, report to [ZToolsCenter/ZTools](https://github.com/ZToolsCenter/ZTools/issues) instead.
+CAI.Tools is maintained by [Caicy](https://github.com/Caicy). Report issues with this edition to [Caicy/CAI.Tools Issues](https://github.com/Caicy/CAI.Tools/issues).
 
 ## 📄 License
 
@@ -335,7 +335,7 @@ This project is licensed under the [MIT License](./LICENSE).
 
 ## 💝 Acknowledgments
 
-- [ZTools](https://github.com/ZToolsCenter/ZTools) - Upstream project this fork is based on
+- [ZTools](https://github.com/ZToolsCenter/ZTools) - Upstream project by Zing (lzx8589561) / ZToolsCenter. Thank you for the original launcher and plugin platform; the original MIT copyright notice is preserved in [LICENSE](./LICENSE).
 - [uTools](https://u.tools/) - Source of inspiration
 - [Electron](https://www.electronjs.org/) - Cross-platform desktop app framework
 - [Vue.js](https://vuejs.org/) - Progressive JavaScript framework

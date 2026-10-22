@@ -480,6 +480,12 @@ declare global {
         updateCommandAliases: (
           aliases: Record<string, Array<{ alias: string; icon?: string }>>
         ) => Promise<{ success: boolean }>
+        // 监听指令别名变化
+        onCommandAliasesChanged?: (callback: () => void) => (() => void) | void
+        // 监听本地启动项变化
+        onLocalShortcutsChanged?: (callback: () => void) => (() => void) | void
+        // 监听系统应用变化
+        onAppsChanged?: (callback: () => void) => (() => void) | void
 
         // 本地启动管理
         localShortcuts: {
@@ -880,11 +886,13 @@ declare global {
 
         // Provider（翻译 / OCR 等）管理
         providers: {
-          getAll: (type?: 'translation' | 'ocr') => Promise<{
+          getAll: <T extends 'translation' | 'ocr' = 'translation' | 'ocr'>(
+            type?: T
+          ) => Promise<{
             success: boolean
             data?: Array<{
               id: string
-              type: 'translation' | 'ocr'
+              type: T
               label: string
               description: string
               source: 'builtin' | 'plugin'

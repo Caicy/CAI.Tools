@@ -1,25 +1,33 @@
-<script setup lang="ts">
+<script
+  setup
+  lang="ts"
+  generic="
+    T extends ShortcutsSettingCommandTargetOptionBase = ShortcutsSettingCommandTargetOptionBase
+  "
+>
 import { computed, ref, watch } from 'vue'
 import { AdaptiveIcon } from '@/components'
 import { useEscapeHandler } from '@/composables'
 import { weightedSearch } from '@/utils'
 import type { ShortcutsSettingCommandTargetOptionBase } from '@/views/ShortcutsSetting/ShortcutsSetting'
 
-interface TargetPluginOption {
+interface TargetPluginOption<
+  TOption extends ShortcutsSettingCommandTargetOptionBase = ShortcutsSettingCommandTargetOptionBase
+> {
   pluginName: string
   pluginTitle: string
   icon?: string
-  commands: ShortcutsSettingCommandTargetOptionBase[]
+  commands: TOption[]
 }
 
 const props = defineProps<{
-  options: ShortcutsSettingCommandTargetOptionBase[]
+  options: T[]
   selectedCommandId?: string | null
-  selectedOption?: ShortcutsSettingCommandTargetOptionBase | null
+  selectedOption?: T | null
 }>()
 
 const emit = defineEmits<{
-  (e: 'select', value: ShortcutsSettingCommandTargetOptionBase): void
+  (e: 'select', value: T): void
   (e: 'escape'): void
 }>()
 
@@ -33,8 +41,8 @@ const currentTarget = computed(
     null
 )
 
-const pluginOptions = computed<TargetPluginOption[]>(() => {
-  const pluginMap = new Map<string, TargetPluginOption>()
+const pluginOptions = computed<TargetPluginOption<T>[]>(() => {
+  const pluginMap = new Map<string, TargetPluginOption<T>>()
 
   // 将扁平目标列表整理成“分组 -> 指令”的两级选择结构。
   for (const item of props.options) {
@@ -117,24 +125,29 @@ watch(
 
 /**
  * 进入某个目标分组，显示其下的指令列表。
+ * @param pluginName 选中的目标插件/分组名称。
+ * @returns 无返回值。
  */
 function handleSelectPlugin(pluginName: string): void {
+  // 记录选中的分组名并清空搜索关键字。
   selectedPluginName.value = pluginName
   selectorQuery.value = ''
 }
 
 /**
  * 返回分组列表，并清空当前分组内的搜索关键字。
+ * @returns 无返回值。
  */
 function handleBackToPlugins(): void {
+  // 清除选中分组回到根层列表。
   selectedPluginName.value = null
   selectorQuery.value = ''
 }
 
 /**
  * 处理选择器中的 Esc，优先返回上一级分组列表。
- * @param _event 当前键盘事件
- * @returns 已消费 ESC 事件
+ * @param _event 当前键盘事件。
+ * @returns 已消费 ESC 事件。
  */
 function handleSelectorEscape(_event: KeyboardEvent): boolean {
   if (selectedPluginName.value) {
@@ -151,8 +164,11 @@ useEscapeHandler(handleSelectorEscape, { priority: 120 })
 
 /**
  * 将用户选中的目标指令回传给父组件。
+ * @param target 用户选中的具体目标指令项。
+ * @returns 无返回值。
  */
-function handleSelectTarget(target: ShortcutsSettingCommandTargetOptionBase): void {
+function handleSelectTarget(target: T): void {
+  // 向父级组件触发选择事件并附带目标指令对象。
   emit('select', target)
 }
 </script>

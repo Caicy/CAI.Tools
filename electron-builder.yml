@@ -38,8 +38,8 @@ asarUnpack:
   - '**/node_modules/@img/**/*'
 fileAssociations:
   - ext: zpx
-    name: ZTools Plugin
-    description: ZTools Plugin Package
+    name: CAI.Tools Plugin
+    description: CAI.Tools Plugin Package
     role: Viewer
 win:
   compression: maximum
@@ -85,7 +85,7 @@ linux:
   target:
     - AppImage
     - deb
-  maintainer: electronjs.org
+  maintainer: Caicy
   category: Utility
 appImage:
   artifactName: ${name}-${version}-${os}-${arch}.${ext}

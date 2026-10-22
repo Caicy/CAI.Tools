@@ -2,8 +2,8 @@
   "$schema": "node_modules/@ztools-center/ztools-api-types/resource/ztools.schema.json",
   "name": "system",
   "title": "系统",
-  "description": "ZTools 系统内置插件",
-  "author": "Zing",
+  "description": "CAI.Tools 系统内置插件",
+  "author": "Caicy",
   "version": "1.0.0",
   "logo": "clear.png",
   "features": [

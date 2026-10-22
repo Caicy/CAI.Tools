@@ -1,7 +1,7 @@
 {
   "name": "setting",
   "version": "1.0.0",
-  "description": "A ZTools plugin",
+  "description": "CAI.Tools 内置设置插件",
   "type": "module",
   "scripts": {
     "dev": "vite",

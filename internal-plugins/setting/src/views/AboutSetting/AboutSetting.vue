@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useToast } from '@/components'
-import { GITHUB_REPOSITORY_URL } from '@shared/updateSource'
-import type { LocalEditionInfo } from '@shared/localEdition'
+import { GITHUB_REPOSITORY_URL, GITHUB_ISSUES_URL } from '@shared/updateSource'
+import { LOCAL_MAINTAINER_NAME, type LocalEditionInfo } from '@shared/localEdition'
 
 const { error } = useToast()
 const appVersion = ref('')
@@ -82,11 +82,11 @@ async function changeAutoCheck(): Promise<void> {
 }
 
 /**
- * 打开上游项目的交流群页面。
+ * 打开 CAI.Tools 自有项目的问题反馈页面。
  * @returns 无返回值。
  */
-function openQQGroup(): void {
-  window.ztools.shellOpenExternal('https://qm.qq.com/q/fXCzbh3Txe')
+function openIssues(): void {
+  window.ztools.shellOpenExternal(GITHUB_ISSUES_URL)
 }
 
 /**
@@ -103,6 +103,14 @@ function openGithub(): void {
  */
 function openSponsor(): void {
   window.ztools.shellOpenExternal('https://afdian.com/a/ZTools')
+}
+
+/**
+ * 打开原始项目，便于查看来源及原作者贡献。
+ * @returns 无返回值。
+ */
+function openUpstream(): void {
+  window.ztools.shellOpenExternal('https://github.com/ZToolsCenter/ZTools')
 }
 
 onMounted(loadLocalEdition)
@@ -149,11 +157,11 @@ onMounted(loadLocalEdition)
               />
             </svg>
           </div>
-          <div class="card-label">上游作者</div>
-          <div class="card-value">Zing</div>
+          <div class="card-label">维护者</div>
+          <div class="card-value">{{ LOCAL_MAINTAINER_NAME }}</div>
         </div>
 
-        <div class="about-card clickable" @click="openQQGroup">
+        <button type="button" class="about-card clickable" @click="openIssues">
           <div class="card-icon card-icon-qq">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
               <path
@@ -165,9 +173,9 @@ onMounted(loadLocalEdition)
               />
             </svg>
           </div>
-          <div class="card-label">上游交流群</div>
+          <div class="card-label">项目反馈</div>
           <div class="card-value">
-            1076942619
+            报告问题
             <svg class="external-icon" width="12" height="12" viewBox="0 0 24 24" fill="none">
               <path
                 d="M18 13V19C18 19.5304 17.7893 20.0391 17.4142 20.4142C17.0391 20.7893 16.5304 21 16 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V8C3 7.46957 3.21071 6.96086 3.58579 6.58579C3.96086 6.21071 4.46957 6 5 6H11"
@@ -192,9 +200,9 @@ onMounted(loadLocalEdition)
               />
             </svg>
           </div>
-        </div>
+        </button>
 
-        <div class="about-card clickable" @click="openGithub">
+        <button type="button" class="about-card clickable" @click="openGithub">
           <div class="card-icon card-icon-github">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
               <path
@@ -233,9 +241,9 @@ onMounted(loadLocalEdition)
               />
             </svg>
           </div>
-        </div>
+        </button>
 
-        <div class="about-card clickable" @click="openSponsor">
+        <button type="button" class="about-card clickable" @click="openUpstream">
           <div class="card-icon card-icon-sponsor">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
               <path
@@ -247,10 +255,20 @@ onMounted(loadLocalEdition)
               />
             </svg>
           </div>
-          <div class="card-label">赞助上游</div>
-          <div class="card-value">支持作者</div>
-        </div>
+          <div class="card-label">原始项目</div>
+          <div class="card-value">ZTools</div>
+        </button>
       </div>
+
+      <section class="about-credits" aria-label="原作者与致谢">
+        <h2>原作者与致谢</h2>
+        <p>
+          CAI.Tools 基于 ZTools 开发，由 {{ LOCAL_MAINTAINER_NAME }} 维护本地版。 感谢原作者
+          Zing（lzx8589561）及 ZToolsCenter 提供的开源基础、启动器与插件平台。
+        </p>
+        <p>原项目采用 MIT 许可证，保留原作者版权及许可声明；也感谢所有上游贡献者和开源依赖作者。</p>
+        <button type="button" class="btn" @click="openSponsor">支持原作者 Zing</button>
+      </section>
 
       <!-- 核心技术 -->
       <div class="about-techs">
@@ -343,9 +361,10 @@ onMounted(loadLocalEdition)
         >
       </div>
 
-      <!-- 保留上游版权归属 -->
+      <!-- 同时展示本地版维护者与 MIT 原始署名。 -->
       <div class="about-copyright">
-        Copyright &copy; 2025-{{ currentYear }} ZTools. All rights reserved.
+        <p>CAI.Tools modifications &copy; {{ currentYear }} {{ LOCAL_MAINTAINER_NAME }}</p>
+        <p>Original ZTools &copy; 2025 lzx8589561 · MIT License</p>
       </div>
     </div>
   </div>
@@ -438,6 +457,8 @@ onMounted(loadLocalEdition)
   border-radius: 12px;
   border: 1px solid var(--control-border);
   background: var(--card-bg);
+  color: var(--text-color);
+  font: inherit;
   transition: all 0.2s;
 }
 
@@ -497,6 +518,34 @@ onMounted(loadLocalEdition)
 
 .external-icon {
   color: var(--text-secondary);
+}
+
+.about-credits {
+  width: 100%;
+  max-width: 560px;
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+  box-sizing: border-box;
+}
+
+.about-credits h2 {
+  margin: 0 0 8px;
+  color: var(--text-color);
+  font-size: 15px;
+}
+
+.about-credits p {
+  margin: 0 0 12px;
+}
+
+.about-copyright p {
+  margin: 4px 0;
 }
 
 /* 核心技术标签 */

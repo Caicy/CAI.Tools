@@ -32,7 +32,7 @@ assignees: ''
 ## 💻 环境信息
 
 - OS: [例如 macOS 14.0 / Windows 11]
-- ZTools 版本: [例如 1.0.0]
+- CAI.Tools 版本: [例如 1.0.0]
 - Node.js 版本（如果从源码运行）: [例如 18.0.0]
 
 ## 📝 错误日志

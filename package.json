@@ -1,9 +1,9 @@
 {
   "name": "CAI.Tools",
-  "version": "3.2.0-local.15",
+  "version": "3.2.0-local.16",
   "description": "CAI.Tools 本地工具箱",
   "main": "./out/main/index.js",
-  "author": "ZToolsCenter",
+  "author": "Caicy",
   "homepage": "https://github.com/Caicy/CAI.Tools",
   "repository": {
     "type": "git",

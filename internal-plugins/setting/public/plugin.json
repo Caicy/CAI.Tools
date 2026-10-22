@@ -2,8 +2,8 @@
   "$schema": "node_modules/@ztools-center/ztools-api-types/resource/ztools.schema.json",
   "name": "setting",
   "title": "设置",
-  "description": "ZTools 内置设置插件",
-  "author": "Zing",
+  "description": "CAI.Tools 内置设置插件",
+  "author": "Caicy",
   "version": "1.0.0",
   "main": "index.html",
   "logo": "logo.png",
@@ -82,9 +82,9 @@
     },
     {
       "code": "ui.router?router=About",
-      "explain": "关于 ZTools",
+      "explain": "关于 CAI.Tools",
       "icon": "logo.png",
-      "cmds": ["关于 ZTools"]
+      "cmds": ["关于 CAI.Tools"]
     },
     {
       "code": "function.local-launch-add?router=LocalLaunch",
@@ -114,9 +114,9 @@
     },
     {
       "code": "function.exit",
-      "explain": "退出 ZTools",
+      "explain": "退出 CAI.Tools",
       "icon": "logo.png",
-      "cmds": ["退出 ZTools"]
+      "cmds": ["退出 CAI.Tools"]
     }
   ]
 }

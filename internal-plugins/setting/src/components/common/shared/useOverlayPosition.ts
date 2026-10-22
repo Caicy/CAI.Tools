@@ -268,7 +268,16 @@ function applyPanelWidth(
  * @param options 触发节点、面板引用、方位、宽度等配置
  * @returns resolvedPlacement（最终方位）、panelStyle（绑定到面板的内联样式）、containsTarget（判断点击是否落在触发或面板内）、updatePosition/scheduleUpdate（手动刷新）等
  */
-export function useOverlayPosition(options: UseOverlayPositionOptions) {
+export function useOverlayPosition(options: UseOverlayPositionOptions): {
+  resolvedPlacement: Ref<PopoverPlacement>
+  panelReady: Ref<boolean>
+  panelStyle: Ref<CSSProperties>
+  containsTarget: (target: EventTarget | null) => boolean
+  updatePosition: () => void
+  scheduleUpdate: () => void
+  cancelUpdate: () => void
+} {
+  // 显式声明公开返回类型，避免声明生成依赖工作区 node_modules 的物理路径。
   const resolvedPlacement = ref<PopoverPlacement>(options.placement.value)
   const panelReady = ref(false)
   const panelStyle = ref<CSSProperties>(

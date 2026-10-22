@@ -252,7 +252,7 @@ export class PluginRedirectAPI {
   private showNotification(body: string): void {
     if (Notification.isSupported()) {
       new Notification({
-        title: 'ZTools',
+        title: 'CAI.Tools',
         body: body
       }).show()
     }

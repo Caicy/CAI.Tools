@@ -295,6 +295,54 @@ function temperatureConfig(modelId: string): ConfiguredTemperatureCapability | n
 }
 
 /**
+ * 获取固定模式下的温度数值。
+ * @param modelId 正在编辑的远端模型 ID。
+ * @returns 固定温度数值，未配置或模式不符时返回空字符串。
+ */
+function fixedTemperatureValue(modelId: string): number | '' {
+  // 读取当前模型的温度配置。
+  const config = temperatureConfig(modelId)
+  // 处于固定模式时提取 value 字段，否则回退为空。
+  return config?.mode === 'fixed' ? config.value : ''
+}
+
+/**
+ * 获取范围模式下的最小温度。
+ * @param modelId 正在编辑的远端模型 ID。
+ * @returns 最小温度数值，未配置或模式不符时返回空字符串。
+ */
+function rangeTemperatureMin(modelId: string): number | '' {
+  // 读取当前模型的温度配置。
+  const config = temperatureConfig(modelId)
+  // 处于范围模式时提取 min 字段，否则回退为空。
+  return config?.mode === 'range' ? config.min : ''
+}
+
+/**
+ * 获取范围模式下的最大温度。
+ * @param modelId 正在编辑的远端模型 ID。
+ * @returns 最大温度数值，未配置或模式不符时返回空字符串。
+ */
+function rangeTemperatureMax(modelId: string): number | '' {
+  // 读取当前模型的温度配置。
+  const config = temperatureConfig(modelId)
+  // 处于范围模式时提取 max 字段，否则回退为空。
+  return config?.mode === 'range' ? config.max : ''
+}
+
+/**
+ * 获取范围模式下的默认温度。
+ * @param modelId 正在编辑的远端模型 ID。
+ * @returns 默认温度数值，未配置或模式不符时返回空字符串。
+ */
+function rangeTemperatureDefault(modelId: string): number | '' {
+  // 读取当前模型的温度配置。
+  const config = temperatureConfig(modelId)
+  // 处于范围模式时提取 default 字段，否则回退为空。
+  return config?.mode === 'range' ? config.default : ''
+}
+
+/**
  * 切换模型温度能力声明模式。
  * @param modelId 正在编辑的远端模型 ID
  * @param mode 新的温度能力模式
@@ -354,16 +402,20 @@ function updateContextWindowK(modelId: string, value: number): void {
 
 /**
  * 更新模型支持的输入模态，至少保留一种模态。
- * @param modelId 正在编辑的远端模型 ID
- * @param modality 要切换的输入模态
- * @param enabled 是否声明支持该模态
- * @returns 无返回值
+ * @param modelId 正在编辑的远端模型 ID。
+ * @param modality 要切换的输入模态。
+ * @param enabled 是否声明支持该模态。
+ * @returns 无返回值。
  */
 function setInputModality(modelId: string, modality: AiInputModality, enabled: boolean): void {
   const config = ensureModelConfig(modelId)
-  const current = config.inputModalities?.length ? [...config.inputModalities] : ['text']
-  const next = enabled
-    ? Array.from(new Set([...current, modality]))
+  // 获取当前模态列表，若空则回退到默认文本模态。
+  const current: AiInputModality[] = config.inputModalities?.length
+    ? [...config.inputModalities]
+    : ['text']
+  // 计算变更后的模态集合。
+  const next: AiInputModality[] = enabled
+    ? Array.from(new Set<AiInputModality>([...current, modality]))
     : current.filter((item) => item !== modality)
   // 至少保留一种输入模态，避免生成无法调用的空能力声明。
   if (next.length === 0) return
@@ -770,11 +822,7 @@ function handleSave(): void {
                     min="0"
                     max="2"
                     step="0.1"
-                    :value="
-                      temperatureConfig(modelId)?.mode === 'fixed'
-                        ? temperatureConfig(modelId)?.value
-                        : ''
-                    "
+                    :value="fixedTemperatureValue(modelId)"
                     @input="
                       updateTemperatureField(
                         modelId,
@@ -797,11 +845,7 @@ function handleSave(): void {
                     min="0"
                     max="2"
                     step="0.1"
-                    :value="
-                      temperatureConfig(modelId)?.mode === 'range'
-                        ? temperatureConfig(modelId)?.min
-                        : ''
-                    "
+                    :value="rangeTemperatureMin(modelId)"
                     @input="
                       updateTemperatureField(
                         modelId,
@@ -819,11 +863,7 @@ function handleSave(): void {
                     min="0"
                     max="2"
                     step="0.1"
-                    :value="
-                      temperatureConfig(modelId)?.mode === 'range'
-                        ? temperatureConfig(modelId)?.max
-                        : ''
-                    "
+                    :value="rangeTemperatureMax(modelId)"
                     @input="
                       updateTemperatureField(
                         modelId,
@@ -841,11 +881,7 @@ function handleSave(): void {
                     min="0"
                     max="2"
                     step="0.1"
-                    :value="
-                      temperatureConfig(modelId)?.mode === 'range'
-                        ? temperatureConfig(modelId)?.default
-                        : ''
-                    "
+                    :value="rangeTemperatureDefault(modelId)"
                     @input="
                       updateTemperatureField(
                         modelId,

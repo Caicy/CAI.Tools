@@ -1,6 +1,7 @@
 export const GITHUB_UPDATE_OWNER = 'Caicy'
 export const GITHUB_UPDATE_REPO = 'CAI.Tools'
 export const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_UPDATE_OWNER}/${GITHUB_UPDATE_REPO}`
+export const GITHUB_ISSUES_URL = `${GITHUB_REPOSITORY_URL}/issues`
 export const GITHUB_RELEASES_URL = `${GITHUB_REPOSITORY_URL}/releases`
 // GitHub /latest 不包含 local 预发布版，手动入口必须展示完整发布列表。
 export const GITHUB_LATEST_RELEASE_URL = GITHUB_RELEASES_URL

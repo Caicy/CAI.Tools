@@ -5,8 +5,15 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
-import { WindowsContextMenuManager } from '../../src/main/utils/windowsContextMenu'
-import { BLOCKED_KEYS, type ContextMenuState } from '../../src/shared/windowsContextMenu'
+import {
+  WindowsContextMenuManager,
+  runRegistryRequest
+} from '../../src/main/utils/windowsContextMenu'
+import {
+  BLOCKED_KEYS,
+  CLASSIC_MENU_CLSID,
+  type ContextMenuState
+} from '../../src/shared/windowsContextMenu'
 
 const execFileAsync = promisify(execFile)
 const reg = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe')
@@ -26,16 +33,20 @@ async function queryValue(key: string, name: string): Promise<string | null> {
 }
 
 /**
- * 读取最新列表中的指定菜单项状态。
- * @param manager 右键菜单服务
- * @param id 菜单项标识
- * @returns 当前状态，未找到时为 undefined
+ * 从真实注册表读取测试菜单状态，避免每次检查都重复扫描无关的 Appx 包。
+ * @param id 当前用例在所有文件菜单下创建的唯一菜单项标识。
+ * @returns 当前状态，未找到时为 undefined。
  */
-async function stateOf(
-  manager: WindowsContextMenuManager,
-  id: string
-): Promise<ContextMenuState | undefined> {
-  return (await manager.list()).entries?.find((entry) => entry.id === id)?.state
+async function stateOf(id: string): Promise<ContextMenuState | undefined> {
+  // 首次 manager.list 仍覆盖完整枚举；状态回读只扫描测试项所在的所有文件菜单。
+  const result = await runRegistryRequest({
+    action: 'list-registry',
+    locations: ['*'],
+    blockedKeys: BLOCKED_KEYS,
+    classicKey: `Software\\Classes\\CLSID\\${CLASSIC_MENU_CLSID}`
+  })
+  expect(result.success, result.error).toBe(true)
+  return result.entries?.find((entry) => entry.id === id)?.state
 }
 
 /**
@@ -54,6 +65,10 @@ async function latestRecord(manager: WindowsContextMenuManager, entryId: string)
 
 it.skipIf(process.platform !== 'win32')(
   'Windows 实机：三态切换、批量部分失败、扩展屏蔽、经典菜单及跨实例还原',
+  /**
+   * 验证真实注册表中的三态切换、部分失败及跨实例还原，始终清理唯一测试项。
+   * @returns 验证与资源清理完成的 Promise。
+   */
   async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'cai-context-menu-registry-'))
     const id = `HKCU\\Software\\Classes\\*\\shell\\CAIToolsTest_${randomUUID()}`
@@ -76,23 +91,23 @@ it.skipIf(process.platform !== 'win32')(
       const disabled = await manager.apply([{ id, state: 'disabled' }])
       expect(disabled.success).toBe(true)
       expect(disabled.results?.[0]).toMatchObject({ success: true, changed: true })
-      expect(await stateOf(manager, id)).toBe('disabled')
+      expect(await stateOf(id)).toBe('disabled')
       const backupPath = disabled.results![0].backupPath!
       expect(await readFile(backupPath, 'utf16le')).toContain('"LegacyDisable"=-')
       await execFileAsync(reg, ['import', backupPath, view])
-      expect(await stateOf(manager, id)).toBe('shown')
+      expect(await stateOf(id)).toBe('shown')
 
       // 仅 Shift 显示后再禁用，禁用保留 Extended；逐条还原依次回到原状态。
       expect((await manager.apply([{ id, state: 'extended' }])).success).toBe(true)
-      expect(await stateOf(manager, id)).toBe('extended')
+      expect(await stateOf(id)).toBe('extended')
       expect((await manager.apply([{ id, state: 'disabled' }])).success).toBe(true)
       expect(await queryValue(id, 'Extended')).not.toBeNull()
       const restarted = new WindowsContextMenuManager(directory, 'win32', undefined, classicKey)
       expect((await restarted.restore([await latestRecord(restarted, id)])).success).toBe(true)
-      expect(await stateOf(restarted, id)).toBe('extended')
+      expect(await stateOf(id)).toBe('extended')
       const extendedRecord = await latestRecord(restarted, id)
       expect((await restarted.restore([extendedRecord])).success).toBe(true)
-      expect(await stateOf(restarted, id)).toBe('shown')
+      expect(await stateOf(id)).toBe('shown')
       expect((await restarted.restore([extendedRecord])).success).toBe(true)
 
       // 外部软件改变标记时拒绝覆盖；恢复本工具的标记后允许重试。
@@ -112,7 +127,7 @@ it.skipIf(process.platform !== 'win32')(
       expect(batch.success).toBe(false)
       expect(batch.results?.map((item) => item.success)).toEqual([true, false, true])
       expect(batch.results?.[1].error).toContain('不存在')
-      expect(await stateOf(manager, id)).toBe('disabled')
+      expect(await stateOf(id)).toBe('disabled')
       expect(await queryValue(BLOCKED_KEYS.HKCU, clsid)).not.toBeNull()
       const history = await manager.listBackups()
       expect(history.backups?.some((item) => item.entryId === missing)).toBe(false)
@@ -121,7 +136,7 @@ it.skipIf(process.platform !== 'win32')(
         .map((item) => item.backupId)
       expect(toRestore).toHaveLength(2)
       expect((await manager.restore(toRestore)).success).toBe(true)
-      expect(await stateOf(manager, id)).toBe('shown')
+      expect(await stateOf(id)).toBe('shown')
       expect(await queryValue(BLOCKED_KEYS.HKCU, clsid)).toBeNull()
 
       // 经典菜单开关使用专用测试项，验证开启、关闭以及按记录撤销关闭。

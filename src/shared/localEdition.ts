@@ -1,4 +1,5 @@
 export const LOCAL_PRODUCT_NAME = 'CAI.Tools'
+export const LOCAL_MAINTAINER_NAME = 'Caicy'
 export const LOCAL_APP_ID = 'tools.cai.local'
 export const UPSTREAM_BASE_VERSION = '3.2.0'
 export const LOCAL_DEFAULT_ROOT_NAME = '.cai-tools'

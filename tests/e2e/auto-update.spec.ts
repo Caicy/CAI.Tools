@@ -48,7 +48,12 @@ async function launchSettings(root: string): Promise<ElectronApplication> {
   return application
 }
 
-test('自有更新窗口、开发安装边界及设置与插件目录重启保留', async ({ browserName: _ }, testInfo) => {
+test('自有更新窗口、开发安装边界及设置与插件目录重启保留', /**
+ * 验证真实更新入口、开发安装边界及重启后的隔离数据保留。
+ * @param fixtures Playwright 测试夹具。
+ * @param testInfo 测试产物输出上下文。
+ * @returns 验证与资源清理完成的 Promise。
+ */ async ({ browserName: _ }, testInfo) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cai-auto-update-e2e-'))
   await fs.mkdir(path.join(root, 'legacy'))
   await fs.writeFile(path.join(root, 'legacy/sentinel'), 'untouched')
@@ -94,11 +99,17 @@ test('自有更新窗口、开发安装边界及设置与插件目录重启保�
     await expect(updateWindow.locator('.update-status')).toContainText('开发环境不支持升级')
     await updateWindow.getByRole('button', { name: '稍后更新' }).click()
 
-    // 通过真实设置 UI 保存偏好；插件清单和 LMDB 值在第二次启动后回读。
-    await inSettings(
-      app,
-      `(() => { const input = document.querySelector('input[type="checkbox"]'); input.checked = false; input.dispatchEvent(new Event('change', { bubbles: true })); return true })()`
-    )
+    // 更新窗口触发插件离开时会重置路由，重新进入关于页后只操作更新偏好。
+    await inSettings(app, `location.hash = '#/about'; true`)
+    await expect
+      .poll(() => inSettings(app, `document.querySelector('.upstream-notice')?.innerText`))
+      .toContain('自动检查 CAI.Tools 更新')
+    expect(
+      await inSettings(
+        app,
+        `(() => { const input = document.querySelector('.upstream-notice input[type="checkbox"]'); if (!input || !input.checked) return false; input.click(); return true })()`
+      )
+    ).toBe(true)
     await expect
       .poll(() =>
         inSettings(

@@ -6,7 +6,7 @@ on:
       version:
         description: '试用版本号（须与此分支 package.json 一致）'
         required: true
-        default: '3.2.0-local.12'
+        default: '3.2.0-local.16'
       publish_release:
         description: '发布 Windows 安装包和 ZIP 到 GitHub Release'
         type: boolean
@@ -105,8 +105,9 @@ jobs:
           node node_modules/electron/install.js
           if ($LASTEXITCODE -ne 0) { throw 'Electron runtime preparation failed.' }
 
+      # Real registry operations spawn PowerShell; avoid competing with parallel transforms.
       - name: Run unit and release-contract tests
-        run: pnpm test
+        run: pnpm test --maxWorkers=1
 
       - name: Build Windows source
         env:

@@ -65,8 +65,7 @@
               >
                 <span aria-hidden="true">?</span>
                 <span id="quark-source-tooltip" class="source-tooltip" role="tooltip">
-                  通过夸克网盘下载并转存时，ZTools
-                  可能获得少量渠道收益，用于分担服务器和持续维护成本。感谢你的支持。
+                  此渠道通过浏览器打开，请核对下载版本和文件来源。
                 </span>
               </button>
             </div>

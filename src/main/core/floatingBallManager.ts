@@ -18,7 +18,6 @@ import { clampPetBounds } from './desktopPet/windowGeometry'
 import { RunnerGameManager } from './desktopPet/runnerGameManager'
 import { PetIdleCycle } from './desktopPet/idleCycle'
 import { CompanionManager } from './desktopPet/companionManager'
-import type { PetInteraction } from '../../shared/desktopPetCompanionTypes'
 import {
   normalizeDesktopPetConfig,
   type DesktopPetConfig,
@@ -58,18 +57,7 @@ class FloatingBallManager {
   private deliveries = new Set<ReturnType<typeof setTimeout>>()
   private authorizeSettings: ((event: PetEvent) => boolean) | null = null
   private quitting = false
-  private companion = new CompanionManager(
-    /**
-     * 明确互动唤醒桌宠，并转交同一台词对应的预设动作。
-     * @param line 本地生成的受控台词。
-     * @returns 无返回值。
-     */
-    (line) => {
-      this.idleCycle.reset()
-      this.publishIdle()
-      this.ballWindow?.webContents.send('desktop-pet:reaction', line)
-    }
-  )
+  private companion = new CompanionManager()
   private runner = new RunnerGameManager({
     /**
      * 将实际结算交给桌宠台词服务。
@@ -872,7 +860,7 @@ class FloatingBallManager {
   }
 
   /**
-   * 显示桌宠操作与游戏入口，菜单期间保持鼠标事件。
+   * 显示游戏及窗口管理入口，菜单期间保持鼠标事件。
    * @returns 无返回值。
    */
   private showContextMenu(): void {
@@ -880,32 +868,8 @@ class FloatingBallManager {
     this.dragging = null
     this.menuOpen = true
     this.setIgnoring(false)
+    // 情感互动由动作和行为触发，菜单只提供功能入口。
     const menu = Menu.buildFromTemplate([
-      {
-        label: '和小薄荷聊聊',
-        /**
-         * 主动打开可聚焦互动面板。
-         * @returns 无返回值。
-         */
-        click: () => this.openCompanion()
-      },
-      {
-        label: '摸摸头',
-        /**
-         * 立即执行摸头并展示台词。
-         * @returns 无返回值。
-         */
-        click: () => this.openCompanion('pat')
-      },
-      {
-        label: '喂点心',
-        /**
-         * 立即执行喂食并展示台词。
-         * @returns 无返回值。
-         */
-        click: () => this.openCompanion('feed')
-      },
-      { type: 'separator' },
       {
         label: '开始桌面快跑',
         enabled: this.config.mode === 'pet' && !this.error,
@@ -961,7 +925,7 @@ class FloatingBallManager {
     else {
       // 先关闭开关再结束游戏，阻止恢复回调重新显示宠物。
       this.runner.close()
-      this.companion.close()
+      this.companion.cancel()
       this.destroyBallWindow()
     }
     return { success: true }
@@ -1050,18 +1014,8 @@ class FloatingBallManager {
       this.config.mode !== 'pet'
     )
       return
-    this.companion.close()
+    this.companion.cancel()
     this.runner.open(this.ballWindow.getBounds())
-  }
-
-  /**
-   * 从当前有效桌宠打开互动面板，沿用原窗口的单击和拖动语义。
-   * @param kind 可选的轻互动。
-   * @returns 无返回值。
-   */
-  private openCompanion(kind?: PetInteraction): void {
-    if (!this.enabled || this.quitting || !this.ballWindow || this.runner.isActive()) return
-    this.companion.open(this.ballWindow.getBounds(), kind)
   }
 }
 export default new FloatingBallManager()

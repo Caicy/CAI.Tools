@@ -75,9 +75,9 @@ async function readMainWindowState(
 ): Promise<{ visible: boolean; pluginViewCount: number }> {
   return await electronApp.evaluate(({ BrowserWindow }) => {
     const mainWindow = BrowserWindow.getAllWindows().find(
-      (window) => window.getTitle() === 'ZTools'
+      (window) => window.getTitle() === 'CAI.Tools'
     )
-    if (!mainWindow) throw new Error('未找到 ZTools 主窗口')
+    if (!mainWindow) throw new Error('未找到 CAI.Tools 主窗口')
     return {
       visible: mainWindow.isVisible(),
       pluginViewCount: mainWindow.contentView.children.length
@@ -93,9 +93,9 @@ async function readMainWindowState(
 async function showMainWindow(electronApp: ElectronApplication): Promise<void> {
   await electronApp.evaluate(({ BrowserWindow }) => {
     const mainWindow = BrowserWindow.getAllWindows().find(
-      (window) => window.getTitle() === 'ZTools'
+      (window) => window.getTitle() === 'CAI.Tools'
     )
-    if (!mainWindow) throw new Error('未找到 ZTools 主窗口')
+    if (!mainWindow) throw new Error('未找到 CAI.Tools 主窗口')
     mainWindow.show()
     mainWindow.webContents.focus()
   })

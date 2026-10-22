@@ -88,9 +88,9 @@ async function readMainWindowLayout(
 ): Promise<MainWindowLayoutSnapshot> {
   return await electronApp.evaluate(({ BrowserWindow }) => {
     const mainWindow = BrowserWindow.getAllWindows().find(
-      (window) => window.getTitle() === 'ZTools'
+      (window) => window.getTitle() === 'CAI.Tools'
     )
-    if (!mainWindow) throw new Error('未找到 ZTools 主窗口')
+    if (!mainWindow) throw new Error('未找到 CAI.Tools 主窗口')
 
     const pluginView = mainWindow.contentView.children[0]
     return {
