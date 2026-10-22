@@ -12,6 +12,19 @@ const execute = promisify(execFile)
 const repository = 'https://github.com/Caicy/CAI.Tools'
 
 /**
+ * 每次读取磁盘上的真实安装版本，避免归档替换后复用旧 ASAR 文件头。
+ * @param {string} installRoot 正在验收的安装目录。
+ * @returns {string} 当前安装包声明的版本。
+ * @throws {Error} 安装器正在替换归档或内容无效时抛错，交由轮询重试。
+ */
+function readInstalledVersion(installRoot) {
+  const archive = path.join(installRoot, 'resources/app.asar')
+  // NSIS 会原地替换同一路径的归档；缓存中的偏移不能用于新的归档。
+  asar.uncache(archive)
+  return JSON.parse(asar.extractFile(archive, 'package.json').toString()).version
+}
+
+/**
  * 禁止在日常电脑或自托管 runner 上安装验收包。
  * @param {NodeJS.ProcessEnv} env 当前进程环境。
  * @param {string} platform 当前操作系统。
@@ -368,10 +381,7 @@ async function main() {
           })
         }
       }
-      const pkg = JSON.parse(
-        asar.extractFile(path.join(installRoot, 'resources/app.asar'), 'package.json').toString()
-      )
-      return pkg.version === target
+      return readInstalledVersion(installRoot) === target
     }, 600000)
     report.checks.installerReplacedApplication = true
     await waitFor(() => baselineExited)
@@ -419,7 +429,7 @@ async function main() {
   }
 }
 
-module.exports = { assertHostedWindows, validateVersion }
+module.exports = { assertHostedWindows, validateVersion, readInstalledVersion }
 if (require.main === module)
   main().catch((error) => {
     console.error(error)
