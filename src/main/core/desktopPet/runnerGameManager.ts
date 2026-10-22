@@ -18,17 +18,21 @@ import {
   type RunnerDragIntent
 } from '../../../shared/desktopPetRunnerTypes'
 import { clampRunnerBounds, restoreRunnerBounds } from './runnerGeometry'
+import type { PetUtterance } from '../../../shared/desktopPetCompanionTypes'
 
 interface RunnerHost {
   hide(): void
   restore(): void
   failed(message: string): void
+  review?(distance: number, bestBefore: number): Promise<PetUtterance | null>
+  cancelReview?(): void
 }
 
 /** 按需持有单个游戏窗口；所有退出路径汇入同一清理流程。 */
 export class RunnerGameManager {
   private window: BrowserWindow | null = null
   private ready = false
+  private reviewed = false
   private timeout: ReturnType<typeof setTimeout> | undefined
   private dragging: { x: number; y: number; bounds: Electron.Rectangle } | null = null
 
@@ -230,6 +234,38 @@ export class RunnerGameManager {
       }
     )
     ipcMain.on('desktop-pet-runner:exit', this.onExit)
+    ipcMain.handle(
+      'desktop-pet-runner:review',
+      /**
+       * 校验每局一次的结算短评，在保存本局纪录前读取原纪录。
+       * @param event 游戏主 frame 事件。
+       * @param distance 本局距离。
+       * @returns 台词 Promise，重复或未就绪时返回 null。
+       * @throws 未授权或距离无效时抛错。
+       */
+      (event, distance: unknown) => {
+        if (!this.authorized(event)) throw new Error('快跑调用未授权')
+        if (
+          typeof distance !== 'number' ||
+          !Number.isFinite(distance) ||
+          distance < 0 ||
+          distance > MAX_RUNNER_DISTANCE
+        )
+          throw new Error('快跑距离无效')
+        if (!this.ready || this.reviewed) return null
+        this.reviewed = true
+        let bestBefore = 0
+        try {
+          bestBefore = readRunnerRecord(
+            databaseAPI.dbGet(HOST_STORAGE_KEYS.desktopPetRunner)
+          ).bestDistance
+        } catch {
+          /* 读取失败保留本地可玩性。 */
+        }
+        return this.host.review?.(Math.floor(distance), bestBefore) ?? null
+      }
+    )
+    ipcMain.on('desktop-pet-runner:cancel-review', this.onCancelReview)
     ipcMain.on('desktop-pet-runner:failed', this.onPageFailure)
     ipcMain.on('desktop-pet-runner:drag', this.onDrag)
   }
@@ -313,6 +349,17 @@ export class RunnerGameManager {
   }
 
   /**
+   * 仅允许游戏主 frame 取消旧台词并开启新一局的短评额度。
+   * @param event 游戏事件。
+   * @returns 无返回值。
+   */
+  private onCancelReview = (event: IpcMainEvent): void => {
+    if (!this.authorized(event)) return
+    this.reviewed = false
+    this.host.cancelReview?.()
+  }
+
+  /**
    * 处理可信页面素材加载失败。
    * @param event 游戏事件。
    * @returns 无返回值。
@@ -371,6 +418,8 @@ export class RunnerGameManager {
    * @returns 无返回值。
    */
   private onClosed = (): void => {
+    this.host.cancelReview?.()
+    this.reviewed = false
     clearTimeout(this.timeout)
     this.window = null
     this.ready = false
@@ -378,6 +427,8 @@ export class RunnerGameManager {
     ipcMain.removeListener('desktop-pet-runner:drag', this.onDrag)
     ipcMain.removeHandler('desktop-pet-runner:ready')
     ipcMain.removeHandler('desktop-pet-runner:save')
+    ipcMain.removeHandler('desktop-pet-runner:review')
+    ipcMain.removeListener('desktop-pet-runner:cancel-review', this.onCancelReview)
     ipcMain.removeListener('desktop-pet-runner:exit', this.onExit)
     ipcMain.removeListener('desktop-pet-runner:failed', this.onPageFailure)
     screen.removeListener('display-added', this.onDisplaysChanged)

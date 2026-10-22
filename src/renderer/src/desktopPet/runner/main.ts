@@ -222,6 +222,8 @@ function draw(): void {
  * @returns 保存结束的 Promise。
  */
 async function saveResult(id: number, distance: number): Promise<void> {
+  // 短评先于保存请求取得旧纪录，独立等待，不阻塞结算与再来一次。
+  void showReview(id, distance)
   try {
     const result = await bridge.save(distance)
     if (disposed) return
@@ -231,6 +233,26 @@ async function saveResult(id: number, distance: number): Promise<void> {
     draw()
   } catch {
     if (!disposed && id === runId) status.textContent = '纪录未保存，可以继续游戏或返回桌宠'
+  }
+}
+
+/**
+ * 显示本局短评，重开、退出或取消后丢弃旧结果。
+ * @param id 本局代号。
+ * @param distance 本局距离。
+ * @returns 短评处理完成后的 Promise。
+ */
+async function showReview(id: number, distance: number): Promise<void> {
+  const review = document.querySelector<HTMLElement>('#pet-review')!
+  review.dataset.source = 'local'
+  review.textContent = '小薄荷：跑得不错，先歇一会儿吧。'
+  try {
+    const line = await bridge.review(distance)
+    if (disposed || id !== runId || !line) return
+    review.textContent = `小薄荷：${line.text}`
+    review.dataset.source = line.source
+  } catch {
+    // 保留即时本地台词，不影响保存或再开一局。
   }
 }
 
@@ -270,6 +292,8 @@ function animate(): void {
  */
 function newRun(): void {
   if (!loaded) return
+  bridge.cancelReview()
+  document.querySelector<HTMLElement>('#pet-review')!.textContent = ''
   runId++
   status.textContent = ''
   engine.restart()

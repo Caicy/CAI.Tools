@@ -24,6 +24,7 @@ const DEVICE_EXACT_KEYS = new Set([
   'ZTOOLS/settings-general',
   toHostDocId(HOST_STORAGE_KEYS.desktopPetRunner),
   toHostDocId(HOST_STORAGE_KEYS.desktopPetRunnerPosition),
+  toHostDocId(HOST_STORAGE_KEYS.desktopPetCompanion),
   'ZTOOLS/plugins',
   'ZTOOLS/disabled-plugins',
   toHostDocId(HOST_STORAGE_KEYS.pluginOrder),

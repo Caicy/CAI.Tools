@@ -36,6 +36,7 @@ let gazeDirty = true
 let action: PetAction = 'idle'
 let idleState: PetIdleState = { action: 'idle', drink: 0, cycle: 0 }
 let playingCoffee: PetIdleState | null = null
+let reacting = false
 let elapsed = 0
 let lastTime = performance.now()
 let lastFrame = -1
@@ -124,7 +125,7 @@ async function loadAtlas(): Promise<void> {
 }
 
 /**
- * 按动作时钟绘制交互与空闲动作，咖啡完整播放后确认，睡眠连续倾摆并绘制睡眠符号。
+ * 按时钟绘制动作，互动播放完释放优先权；空闲咖啡完成后确认，睡眠连续倾摆。
  * @returns 无返回值。
  */
 function render(): void {
@@ -135,6 +136,7 @@ function render(): void {
   lastTime = now
   let selected = getPetFrame(manifest.clips[action], action === 'idle' ? 0 : elapsed)
   if (selected.done) {
+    reacting = false
     // 确认使用实际播放的代号；输入唤醒后的旧确认不能触发睡眠。
     if (action === 'coffee' && playingCoffee) {
       bridge.send({
@@ -252,7 +254,7 @@ function drawSleepZzz(): void {
 }
 
 /**
- * 接收系统空闲动作，手势与挥手优先；醒来重置咖啡确认但不截断挥手。
+ * 接收系统空闲动作，手势、挥手与轻互动优先；后台循环不截断前台互动。
  * @param state 主进程的空闲循环状态。
  * @returns 无返回值。
  */
@@ -260,7 +262,7 @@ function applyIdleState(state: PetIdleState): void {
   const changedCoffee = state.cycle !== idleState.cycle || state.drink !== idleState.drink
   idleState = state
   canvas.dataset.drink = String(state.drink)
-  if (snapshot?.config.paused || gesture || action === 'waving') return
+  if (snapshot?.config.paused || gesture || action === 'waving' || reacting) return
   // 动作只在收到新的饮用请求时重启，配置快照不能重复播放同一杯。
   if (state.action === 'coffee' && (action !== 'coffee' || changedCoffee)) {
     playingCoffee = { ...state }
@@ -322,10 +324,11 @@ function resize(): void {
 }
 
 /**
- * 取消手势和延迟点击，释放原生拖动锁。
+ * 取消手势、轻互动和延迟点击，释放原生拖动锁与动作优先权。
  * @returns 无返回值。
  */
 function cancelGesture(): void {
+  reacting = false
   clicks.cancel()
   bridge.send({ type: 'press', active: false })
   bridge.send({ type: 'fileHover', active: false })
@@ -396,6 +399,12 @@ surface.addEventListener(
    */
   (event) => {
     if (event.button !== 0) return
+    // 指针接管轻互动后必须释放优先权，后续空闲循环才能恢复。
+    if (reacting) {
+      reacting = false
+      playingCoffee = null
+      setAction('idle')
+    }
     // 按压即时唤醒，不等待下一次系统采样；拖动/挥手继续拥有动作优先级。
     if (!snapshot?.config.paused && (action === 'coffee' || action === 'sleeping')) {
       playingCoffee = null
@@ -566,6 +575,22 @@ const unsubscribe = bridge.onSnapshot(
   }
 )
 const unsubscribeIdle = bridge.onIdle(applyIdleState)
+const unsubscribeReaction = bridge.onReaction(
+  /**
+   * 播放本地互动动作；不把主动喂食计入系统空闲咖啡循环。
+   * @param line 宿主生成的互动台词。
+   * @returns 无返回值。
+   */
+  (line) => {
+    if (!isPetMode() || snapshot.config.paused || gesture) return
+    if (line.action !== 'waving' && line.action !== 'coffee') return
+    playingCoffee = null
+    reacting = true
+    canvas.dataset.reaction = line.emotion
+    action = 'idle'
+    setAction(line.action)
+  }
+)
 const unsubscribeGaze = bridge.onGaze(
   /**
    * 接收系统光标方向，待机按需重绘，暂停时保持当前眼睛位置。
@@ -592,6 +617,7 @@ window.addEventListener(
     clearTimeout(timer)
     unsubscribe()
     unsubscribeIdle()
+    unsubscribeReaction()
     unsubscribeGaze()
     atlas?.close()
   }

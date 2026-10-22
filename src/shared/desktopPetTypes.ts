@@ -1,3 +1,5 @@
+import type { PetUtterance } from './desktopPetCompanionTypes'
+
 export type PetAction = 'idle' | 'running-right' | 'running-left' | 'waving' | 'coffee' | 'sleeping'
 
 export interface PetIdleState {
@@ -57,6 +59,7 @@ export interface DesktopPetBridge {
   onSnapshot(callback: (snapshot: PetSnapshot) => void): () => void
   onIdle(callback: (state: PetIdleState) => void): () => void
   onGaze(callback: (point: { x: number; y: number }) => void): () => void
+  onReaction(callback: (line: PetUtterance) => void): () => void
 }
 
 export const DEFAULT_DESKTOP_PET_CONFIG: DesktopPetConfig = {

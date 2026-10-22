@@ -21,6 +21,17 @@ const bridge: DesktopPetRunnerBridge = {
    */
   save: (distance) => ipcRenderer.invoke('desktop-pet-runner:save', distance),
   /**
+   * 请求本局一次短评，正文生成不阻塞分数保存。
+   * @param distance 本局有效距离。
+   * @returns 台词或取消标记。
+   */
+  review: (distance) => ipcRenderer.invoke('desktop-pet-runner:review', distance),
+  /**
+   * 新一局开始时取消旧结算台词。
+   * @returns 无返回值。
+   */
+  cancelReview: () => ipcRenderer.send('desktop-pet-runner:cancel-review'),
+  /**
    * 返回桌宠。
    * @returns 无返回值。
    */

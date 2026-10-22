@@ -149,8 +149,54 @@ import { ipcMain, screen, powerMonitor } from 'electron'
 import { RunnerGameManager } from '../../src/main/core/desktopPet/runnerGameManager'
 
 let manager: RunnerGameManager
-const host = { hide: vi.fn(), restore: vi.fn(), failed: vi.fn() }
+const host = {
+  hide: vi.fn(),
+  restore: vi.fn(),
+  failed: vi.fn(),
+  review: vi.fn(),
+  cancelReview: vi.fn()
+}
 const bounds = { x: 100, y: 100, width: 144, height: 192 }
+
+test('短评仅接受主 frame 的有效结算，每局一次，重开与关闭取消' /**
+ * 验证短评授权、真实旧纪录与单局请求额度。
+ * @returns 检查完成的 Promise。
+ */, async () => {
+  manager.open(bounds)
+  const review = mocks.handlers.get('desktop-pet-runner:review')!
+  expect(
+    /**
+     * 子 frame 不能请求短评。
+     * @returns 调用结果。
+     */
+    () => review({ ...event(), senderFrame: {} }, 50)
+  ).toThrow('未授权')
+  for (const distance of [-1, NaN, Infinity, '50', 1e15]) {
+    expect(
+      /**
+       * 拒绝非法距离。
+       * @returns 调用结果。
+       */
+      () => review(event(), distance)
+    ).toThrow('距离无效')
+  }
+  expect(review(event(), 60)).toBeNull()
+  mocks.handlers.get('desktop-pet-runner:ready')!(event())
+  host.review.mockResolvedValue({ text: '本局短评' })
+  await expect(review(event(), 60.5)).resolves.toEqual({ text: '本局短评' })
+  expect(host.review).toHaveBeenCalledWith(60, 40)
+  expect(review(event(), 70)).toBeNull()
+  ipcMain.emit('desktop-pet-runner:cancel-review', { ...event(), senderFrame: {} })
+  expect(review(event(), 70)).toBeNull()
+  expect(host.cancelReview).not.toHaveBeenCalled()
+  ipcMain.emit('desktop-pet-runner:cancel-review', event())
+  await review(event(), 70)
+  expect(host.review).toHaveBeenCalledTimes(2)
+  expect(host.cancelReview).toHaveBeenCalledTimes(1)
+  manager.close()
+  expect(host.cancelReview).toHaveBeenCalledTimes(2)
+  expect(mocks.handlers.has('desktop-pet-runner:review')).toBe(false)
+})
 
 /**
  * 返回当前窗口可信主 frame 事件。

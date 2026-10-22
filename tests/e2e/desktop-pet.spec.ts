@@ -980,6 +980,35 @@ test('系统空闲三杯咖啡后睡眠，zzz 可见，输入唤醒且暂停和�
          */ () => getPetPageState(app!)
       )
       .toMatchObject({ action: 'idle', drink: '0', zzz: false })
+    await app.evaluate(
+      /**
+       * 注入宿主轻互动，随后立即用真实页面手势打断动画。
+       * @param electron 当前 Electron 主进程模块。
+       * @returns 无返回值。
+       */
+      ({ BrowserWindow }) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (win.webContents.getURL().includes('desktop-pet.html')) {
+            win.webContents.send('desktop-pet:reaction', {
+              id: 'interrupted-feed',
+              text: '测试喂食',
+              source: 'local',
+              emotion: 'happy',
+              action: 'coffee'
+            })
+          }
+        }
+      }
+    )
+    await expect
+      .poll(
+        /**
+         * 确认轻互动已获得动作优先权。
+         * @returns 宠物页面状态。
+         */
+        () => getPetPageState(app!)
+      )
+      .toMatchObject({ action: 'coffee' })
     const drag = await startSyntheticPetDrag(app)
     expect(drag.action).toBe('running-right')
     await capturePetView(app, testInfo, 'running-right')

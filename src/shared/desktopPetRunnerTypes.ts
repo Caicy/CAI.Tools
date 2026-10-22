@@ -1,3 +1,5 @@
+import type { PetUtterance } from './desktopPetCompanionTypes'
+
 export type RunnerPhase = 'ready' | 'countdown' | 'running' | 'paused' | 'gameOver'
 
 export interface RunnerRecord {
@@ -21,6 +23,8 @@ export interface RunnerPosition {
 export interface DesktopPetRunnerBridge {
   ready(): Promise<RunnerRecord>
   save(distance: number): Promise<RunnerSaveResult>
+  review(distance: number): Promise<PetUtterance | null>
+  cancelReview(): void
   drag(intent: RunnerDragIntent): void
   /** 仅隔离源码 E2E 窗口传入，生产窗口恒为 false。 */
   testEnabled: boolean

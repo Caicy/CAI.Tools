@@ -1,7 +1,28 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { DesktopPetBridge, PetIdleState, PetSnapshot } from '../shared/desktopPetTypes'
+import type { PetUtterance } from '../shared/desktopPetCompanionTypes'
 
 const bridge: DesktopPetBridge = {
+  /**
+   * 订阅主进程产生的互动台词与白名单动作。
+   * @param callback 受控互动接收器。
+   * @returns 解除订阅函数。
+   */
+  onReaction: (callback) => {
+    /**
+     * 只转交台词，不暴露 Electron 事件。
+     * @param _event IPC 事件。
+     * @param line 互动台词。
+     * @returns 无返回值。
+     */
+    const listener = (_event: Electron.IpcRendererEvent, line: PetUtterance): void => callback(line)
+    ipcRenderer.on('desktop-pet:reaction', listener)
+    /**
+     * 页面卸载时释放互动监听。
+     * @returns 无返回值。
+     */
+    return () => ipcRenderer.removeListener('desktop-pet:reaction', listener)
+  },
   /**
    * 订阅主进程的系统空闲状态，不向页面暴露系统输入或环境变量。
    * @param callback 空闲动作接收器。

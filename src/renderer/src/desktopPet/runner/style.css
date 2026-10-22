@@ -155,6 +155,20 @@ h1 {
   font-size: 10px;
   color: #ecd4a0;
 }
+#pet-review {
+  max-width: 560px;
+  max-height: 32px;
+  margin: 4px auto 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: #c4e8cd;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+#pet-review:empty {
+  display: none;
+}
 header {
   cursor: grab;
   touch-action: none;
