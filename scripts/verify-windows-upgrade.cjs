@@ -336,10 +336,10 @@ async function main() {
       /**
        * 在真实退出事件中释放验收工具持有的调试连接。
        * @param {object} electron Electron 主进程模块。
-       * @returns {Promise<void>} 退出监听注册完成后结束。
+       * @returns {void} 退出监听注册完成后结束。
        */
-      async ({ app }) => {
-        const inspector = await import('node:inspector')
+      ({ app }) => {
+        const inspector = process.getBuiltinModule('inspector')
         app.once(
           'will-quit',
           /**
