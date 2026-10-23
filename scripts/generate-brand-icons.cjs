@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '..')
 async function main() {
   const source = await fs.readFile(path.join(root, 'resources/branding/cai-tools.svg'))
   const tray = await fs.readFile(path.join(root, 'resources/branding/cai-tools-tray.svg'))
-  // 应用与 README 的品牌位图来自同一矢量源，第三方与功能图标保持原样。
+  // 应用、默认头像与 README 共用品牌源，覆盖主窗口设置入口及超级面板。
   const targets = [
     ['build/icon.png', 1024],
     ['.github/assets/icon.png', 512],
@@ -19,6 +19,8 @@ async function main() {
     ['resources/icons/icon-ztools.png', 256],
     ['resources/icons/windows-icon.png', 64],
     ['src/renderer/src/assets/logo.png', 512],
+    ['src/renderer/src/assets/image/default.png', 256],
+    ['internal-plugins/setting/src/assets/image/default.png', 256],
     ['internal-plugins/setting/public/logo.png', 256]
   ]
   for (const [filename, size] of targets) {

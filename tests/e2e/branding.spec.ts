@@ -2,6 +2,8 @@ import { test, expect, _electron as electron, type ElectronApplication } from '@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import { GITHUB_REPOSITORY_URL, GITHUB_ISSUES_URL } from '../../src/shared/updateSource'
 
 const root = path.resolve(__dirname, '../..')
@@ -92,6 +94,35 @@ test('CAI.Tools 品牌、Caicy 项目信息与原作者致谢', /**
     const main = await app.firstWindow()
     await expect(main.locator('.search-input')).toBeVisible()
     await expect(main).toHaveTitle('CAI.Tools')
+    // 验证真正显示的主窗口设置入口，不能只检查关于页和安装包图标。
+    const settingsIcon = main.locator('.avatar-wrapper img.search-btn')
+    await expect(settingsIcon).toBeVisible()
+    await expect
+      .poll(
+        /**
+         * 等待懒加载图标完成解码，排除透明占位图。
+         * @returns 已显示的图像 URL 或空字符串。
+         */
+        () =>
+          settingsIcon.evaluate(
+            /**
+             * 回读主窗口设置入口实际加载的资源。
+             * @param image 设置入口图像元素。
+             * @returns 完整加载的图像 URL，尚未加载则为空。
+             */
+            (image: HTMLImageElement) =>
+              image.complete && image.naturalWidth > 1 ? image.currentSrc : ''
+          )
+      )
+      .toMatch(/^file:/)
+    const displayedIconUrl = await settingsIcon.getAttribute('src')
+    expect(displayedIconUrl).not.toBeNull()
+    const expectedIcon = await fs.readFile(path.join(root, 'resources/icons/icon-ztools.png'))
+    const displayedIcon = await fs.readFile(fileURLToPath(displayedIconUrl!))
+    expect(createHash('sha256').update(displayedIcon).digest('hex')).toBe(
+      createHash('sha256').update(expectedIcon).digest('hex')
+    )
+    await main.screenshot({ path: testInfo.outputPath('cai-tools-launcher.png') })
     // 外链通过真实 IPC 交付到 shell，但测试拦截后不会打开外部浏览器。
     await app.evaluate(
       /**

@@ -6,7 +6,7 @@
 
 **A Local, Login-Free Application Launcher and Plugin Platform**
 
-_Local-edition fork of [ZTools](https://github.com/ZToolsCenter/ZTools) | Current version 3.2.0-local.16_
+_Local-edition fork of [ZTools](https://github.com/ZToolsCenter/ZTools) | Current version 3.2.0-local.17_
 
 [![GitHub release](https://img.shields.io/github/v/release/Caicy/CAI.Tools)](https://github.com/Caicy/CAI.Tools/releases)
 [![License](https://img.shields.io/github/license/Caicy/CAI.Tools)](./LICENSE)
